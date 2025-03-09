@@ -1,3 +1,8 @@
+import sys
+import os
+
+__import__('pysqlite3')
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import streamlit as st
 from exa_modified import (
     generate_search_query,
@@ -198,7 +203,7 @@ with tab3:
         else:
             st.warning("No posts fetched. Please try a different query.")
 
-            
+
 # Tab 4: Generate Story
 with tab4:
     st.header("Generate a Story from Reddit Post")
