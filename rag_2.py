@@ -5,7 +5,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import create_retrieval_chain
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS  # Changed from Chroma to FAISS
 import time
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -90,9 +90,6 @@ prompt = ChatPromptTemplate.from_template(
     """
 )
 
-# Define the persistent directory for Chroma
-CHROMA_PERSIST_DIRECTORY = "chroma_db"
-
 # Function to generate a story
 def generate_story(user_prompt, min_words, max_words, source_title):
     # Load from the text file
@@ -107,16 +104,11 @@ def generate_story(user_prompt, min_words, max_words, source_title):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     final_documents = text_splitter.create_documents([content])
 
-    # Generate a unique collection name for this request to avoid conflicts
-    collection_name = f"reddit_stories_{uuid.uuid4().hex}"
+    # Generate a unique ID for this request to avoid conflicts
+    unique_id = uuid.uuid4().hex
     
-    # Initialize a fresh Chroma DB with the current story
-    vectors = Chroma.from_documents(
-        documents=final_documents,
-        embedding=embeddings,
-        collection_name=collection_name,
-        persist_directory=CHROMA_PERSIST_DIRECTORY
-    )
+    # Create a FAISS vector store with the documents
+    vectors = FAISS.from_documents(final_documents, embeddings)
     
     # Create the retrieval chain
     document_chain = create_stuff_documents_chain(llm, prompt)
@@ -128,7 +120,7 @@ def generate_story(user_prompt, min_words, max_words, source_title):
     start = time.process_time()
 
     try:
-        # Use the Chroma vector store directly to get documents and scores
+        # Use the vector store to get documents and scores
         docs_with_scores = vectors.similarity_search_with_score(user_prompt, k=5)  # Retrieve top 5 documents
 
         response = retrieval_chain.invoke({"input": user_prompt, "system_message": system_message})
@@ -141,7 +133,7 @@ def generate_story(user_prompt, min_words, max_words, source_title):
             'response_time': elapsed_time,
             'timestamp': datetime.now(),
             'source_story_title': source_title,
-            'collection_name': collection_name  # Store the collection name for reference
+            'unique_id': unique_id
         }
         generated_stories_collection.insert_one(generated_story)
 

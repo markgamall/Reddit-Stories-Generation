@@ -1,8 +1,4 @@
-import sys
-import os
 
-__import__('pysqlite3')
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import streamlit as st
 from exa_modified import (
     generate_search_query,
