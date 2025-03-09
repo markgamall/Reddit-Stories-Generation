@@ -14,6 +14,7 @@ import json
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from bson.objectid import ObjectId
+from rag_2 import generate_story  # Import the function from rag_2.py
 
 # Load environment variables
 load_dotenv()
@@ -167,28 +168,37 @@ with tab3:
                     st.write(post['url'])
     
     if "detailed_posts" in st.session_state:
-        choice = st.number_input("Choose a post to save (enter the number):", 1, len(st.session_state.detailed_posts), 1)
-        if st.button("Save Selected Post", key="save_query_post_button"):
-            chosen_post = st.session_state.detailed_posts[choice - 1]
-            save_to_file(f"Title: {chosen_post['title']}\n\nContent: {chosen_post['content']}")
-            
-            # Insert into MongoDB
-            fetched_stories_collection.insert_one({
-                'title': chosen_post['title'],
-                'content': chosen_post['content'],
-                'source_url': chosen_post['url'],
-                'subreddit': chosen_post['subreddit'],
-                'query': user_query,
-                'timestamp': datetime.now()
-            })
-            
-            # Update session state
-            st.session_state.story_saved = True
-            st.session_state.current_story_title = chosen_post['title']
-            
-            st.success(f"Saved the content of '{chosen_post['title']}' to file and MongoDB.")
-            st.info("Go to the 'Generate Story' tab to create a story based on this post!")
+        if len(st.session_state.detailed_posts) > 0:  # Check if there are posts
+            choice = st.number_input(
+                "Choose a post to save (enter the number):", 
+                1,  # min_value
+                len(st.session_state.detailed_posts),  # max_value
+                1  # default_value
+            )
+            if st.button("Save Selected Post", key="save_query_post_button"):
+                chosen_post = st.session_state.detailed_posts[choice - 1]
+                save_to_file(f"Title: {chosen_post['title']}\n\nContent: {chosen_post['content']}")
+                
+                # Insert into MongoDB
+                fetched_stories_collection.insert_one({
+                    'title': chosen_post['title'],
+                    'content': chosen_post['content'],
+                    'source_url': chosen_post['url'],
+                    'subreddit': chosen_post['subreddit'],
+                    'query': user_query,
+                    'timestamp': datetime.now()
+                })
+                
+                # Update session state
+                st.session_state.story_saved = True
+                st.session_state.current_story_title = chosen_post['title']
+                
+                st.success(f"Saved the content of '{chosen_post['title']}' to file and MongoDB.")
+                st.info("Go to the 'Generate Story' tab to create a story based on this post!")
+        else:
+            st.warning("No posts fetched. Please try a different query.")
 
+            
 # Tab 4: Generate Story
 with tab4:
     st.header("Generate a Story from Reddit Post")
@@ -221,49 +231,33 @@ with tab4:
             else:
                 with st.spinner("Generating your story... This may take a moment."):
                     try:
-                        # Make a request to the RAG-2 Flask API
-                        response = requests.post(
-                            'http://localhost:5000/ask',
-                            json={
-                                'prompt': user_prompt, 
-                                'min_words': min_words, 
-                                'max_words': max_words,
-                                'source_title': st.session_state.current_story_title
-                            },
-                            timeout=120
-                        )
+                        # Call the generate_story function from rag_2.py
+                        result = generate_story(user_prompt, min_words, max_words, st.session_state.current_story_title)
                         
-                        if response.status_code == 200:
-                            result = response.json()
-                            
-                            # Display the generated story
-                            st.subheader("Your Generated Story")
-                            st.markdown(result['answer'])
-                            
-                            # Display metrics
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.metric("Response Time", f"{result['response_time']:.2f} seconds")
-                            
-                            # Optionally display similar documents used for generation
-                            with st.expander("View Source Passages Used"):
-                                for i, doc in enumerate(result['similar_documents']):
-                                    st.markdown(f"**Passage {i+1}** (Similarity: {doc['similarity_score']:.4f})")
-                                    st.markdown(doc['content'])
-                                    st.divider()
-                            
-                            # Option to download the story
-                            story_text = result['answer']
-                            st.download_button(
-                                label="Download Story",
-                                data=story_text,
-                                file_name="generated_story.txt",
-                                mime="text/plain"
-                            )
-                        else:
-                            st.error(f"Error generating story: {response.text}")
-                    except requests.exceptions.ConnectionError:
-                        st.error("Could not connect to the story generation service. Make sure the Flask API (rag_2.py) is running on port 5000.")
+                        # Display the generated story
+                        st.subheader("Your Generated Story")
+                        st.markdown(result['answer'])
+                        
+                        # Display metrics
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Response Time", f"{result['response_time']:.2f} seconds")
+                        
+                        # Optionally display similar documents used for generation
+                        with st.expander("View Source Passages Used"):
+                            for i, doc in enumerate(result['similar_documents']):
+                                st.markdown(f"**Passage {i+1}** (Similarity: {doc['similarity_score']:.4f})")
+                                st.markdown(doc['content'])
+                                st.divider()
+                        
+                        # Option to download the story
+                        story_text = result['answer']
+                        st.download_button(
+                            label="Download Story",
+                            data=story_text,
+                            file_name="generated_story.txt",
+                            mime="text/plain"
+                        )
                     except Exception as e:
                         st.error(f"An error occurred: {str(e)}")
 
@@ -359,14 +353,3 @@ st.sidebar.markdown(
     - Browse your previously generated stories
     """
 )
-
-# Display warning if RAG API is not running
-if st.sidebar.button("Check RAG API Status"):
-    try:
-        response = requests.get('http://localhost:5000/', timeout=5)
-        if response.status_code == 200:
-            st.sidebar.success("✅ RAG API is running and accessible!")
-        else:
-            st.sidebar.warning("⚠️ RAG API returned an unexpected response.")
-    except:
-        st.sidebar.error("❌ RAG API is not running. Please start the Flask server (rag_2.py) before generating stories.")
