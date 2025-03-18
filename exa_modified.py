@@ -61,7 +61,7 @@ def search_youtube_videos(query, num_results=5):
     
     data = {
         "query": f"{query} site:youtube.com",
-        "num_results": num_results * 3,  # Request more results to filter downn
+        "num_results": num_results * 3,  # Reequest more results to filter downn
         "include_domains": ["youtube.com"],
         "highlight_results": False
     }
