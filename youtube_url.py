@@ -81,16 +81,33 @@ def check_transcription_validity(transcription):
 
 def download_video(video_url, output_dir=".", fs=None):
     """Download video and store it in GridFS if available"""
+    # Common options for both local and GridFS methods
+    common_opts = {
+        'format': 'best',
+        'noplaylist': True,
+        'postprocessors': [
+            {'key': 'FFmpegVideoConvertor', 'preferedformat': 'mp4'}
+        ],
+        # Add these options to bypass YouTube restrictions
+        'nocheckcertificate': True,
+        'ignoreerrors': True,
+        'no_warnings': True,
+        'quiet': False,  # Set to True in production
+        'geo_bypass': True,
+        'geo_bypass_country': 'US',
+        'extractor_retries': 5,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+        }
+    }
+
     if fs is None:
         # Original method (for local use without GridFS)
-        opts = {
-            'format': 'best',
-            'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'), 
-            'noplaylist': True,
-            'postprocessors': [
-                {'key': 'FFmpegVideoConvertor', 'preferedformat': 'mp4'}
-            ]
-        }
+        opts = {**common_opts, 'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s')}
 
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -103,14 +120,7 @@ def download_video(video_url, output_dir=".", fs=None):
             return None, None
     else:
         # GridFS method (for deployed environment)
-        opts = {
-            'format': 'best',
-            'outtmpl': 'temp_video.%(ext)s',  # Use a simple temporary filename
-            'noplaylist': True,
-            'postprocessors': [
-                {'key': 'FFmpegVideoConvertor', 'preferedformat': 'mp4'}
-            ]
-        }
+        opts = {**common_opts, 'outtmpl': 'temp_video.%(ext)s'}
 
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
