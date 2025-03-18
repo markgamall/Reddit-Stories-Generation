@@ -44,9 +44,7 @@ def generate_youtube_search_query(user_query):
     prompt = PromptTemplate(
         input_variables=["user_query"],
         template="""
-        Generate a specific, detailed search query to find relevant YouTube videos about: {user_query}
-        Make the query specific enough to return directly relevant results.
-        Focus on key topics, terms, and concepts that would appear in titles and descriptions.
+        Generate a search query to find Reddit posts about: {user_query} in the format '"{user_query}" inurl:reddit.com'.
         """
     )
     chain = LLMChain(llm=llm, prompt=prompt)
