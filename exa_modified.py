@@ -32,7 +32,9 @@ reddit = praw.Reddit(
 def generate_search_query(user_query):
     prompt = PromptTemplate(
         input_variables=["user_query"],
-        template="Generate a search query to find Reddit posts about: {user_query}"
+        template="""
+        Generate a search query to find Reddit posts about: {user_query}
+        """
     )
     chain = LLMChain(llm=llm, prompt=prompt)
     search_query = chain.run(user_query)
