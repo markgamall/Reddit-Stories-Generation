@@ -34,6 +34,7 @@ def generate_search_query(user_query):
         input_variables=["user_query"],
         template="""
         Generate a search query to find Reddit posts about: {user_query} in the format '"{user_query}" inurl:reddit.com'.
+        fix spelling errors.
         """
     )
     chain = LLMChain(llm=llm, prompt=prompt)
@@ -45,6 +46,7 @@ def generate_youtube_search_query(user_query):
         input_variables=["user_query"],
         template=""" 
         Generate a search query to find Youtube videos about: {user_query} in the format '"{user_query}" site:youtube.com'.
+        fix spelling errors.
         """ 
     )       
     chain = LLMChain(llm=llm, prompt=prompt) 
