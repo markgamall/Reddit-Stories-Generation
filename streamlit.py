@@ -938,15 +938,12 @@ else:  # Story Generation
                 with st.expander(f"{prompt_data['title']} - {prompt_data['description']}"):
                     st.markdown(f"**{prompt_data['title']}**")
                     st.markdown(f"_{prompt_data['description']}_")
-                    st.text_area("Prompt:", prompt_data['prompt'], height=150, key=f"prompt_template_{category}_{i}", disabled=True)
                     
-                    # Create a unique key for the copy button
-                    copy_button_key = f"copy_button_{category}_{i}"
+                    # Always display the code block with the copy button
+                    st.code(prompt_data['prompt'], language="text")
                     
-                    # Add a copy button for each prompt
-                    if st.button("📋 Copy Prompt", key=copy_button_key):
-                        st.code(prompt_data['prompt'], language="text")
-                        st.toast("✅ Click the copy button in the code block to copy the prompt")
+                    # Remove the separate copy button and confusing toast
+                    st.markdown("👆 Click the copy button in the top-right corner of the code block above to copy the prompt")
         
         # Add a section for custom prompt creation
         st.subheader("Create Your Own Prompt Template")
