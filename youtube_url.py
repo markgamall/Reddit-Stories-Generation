@@ -79,7 +79,7 @@ def check_transcription_validity(transcription):
     else:
         return "valid"
 
-def download_video(video_url, output_dir=".", fs=None):
+def download_video(video_url, fs=None):
     """Download video and store it in GridFS if available"""
     # Common options for both local and GridFS methods
     common_opts = {
@@ -88,7 +88,6 @@ def download_video(video_url, output_dir=".", fs=None):
         'postprocessors': [
             {'key': 'FFmpegVideoConvertor', 'preferedformat': 'mp4'}
         ],
-        # Add these options to bypass YouTube restrictions
         'nocheckcertificate': True,
         'ignoreerrors': True,
         'no_warnings': True,
@@ -106,34 +105,30 @@ def download_video(video_url, output_dir=".", fs=None):
     }
 
     if fs is None:
-        # Original method (for local use without GridFS)
-        opts = {**common_opts, 'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s')}
+        # If GridFS is not available, download to a temporary file (not ideal for production)
+        temp_video_path = "temp_video.mp4"
+        opts = {**common_opts, 'outtmpl': temp_video_path}
 
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info_dict = ydl.extract_info(video_url, download=True)
                 video_title = sanitize_filename(info_dict.get('title', 'Unknown_Title'))
-                print(f"Video downloaded as: {video_title}.mp4")
-                return os.path.join(output_dir, f"{video_title}.mp4"), video_title
+                print(f"Video downloaded as: {temp_video_path}")
+                return temp_video_path, video_title
         except Exception as e:
             print(f"Error downloading video: {e}")
             return None, None
     else:
-        # GridFS method (for deployed environment)
-        opts = {**common_opts, 'outtmpl': 'temp_video.%(ext)s'}
-
+        # GridFS method (for production environment)
         try:
+            # Download the video directly to memory
+            opts = {**common_opts, 'outtmpl': '-', 'quiet': True}
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info_dict = ydl.extract_info(video_url, download=True)
                 video_title = sanitize_filename(info_dict.get('title', 'Unknown_Title'))
-                temp_video_path = "temp_video.mp4"  # This will be the local temp file
                 
                 # Store the video in MongoDB GridFS
-                with open(temp_video_path, 'rb') as video_file:
-                    file_id = fs.put(video_file, filename=f"{video_title}.mp4")
-                
-                # Remove the local temp file
-                os.remove(temp_video_path)
+                file_id = fs.put(ydl.result, filename=f"{video_title}.mp4")
                 
                 print(f"Video downloaded and stored in MongoDB with ID: {file_id}")
                 return str(file_id), video_title  # Return GridFS ID instead of file path
