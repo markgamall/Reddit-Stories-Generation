@@ -45,56 +45,6 @@ generated_stories_collection = db['generated_stories']
 youtube_transcriptions_collection = db['youtube_transcriptions']
 fs = GridFS(db)
 
-
-
-
-
-
-
-
-
-
-
-import subprocess
-
-# Cache the ffmpeg installation check
-@st.cache_resource
-def setup_ffmpeg():
-    try:
-        # First check if ffmpeg is available
-        subprocess.run(['ffmpeg', '-version'], 
-                      stdout=subprocess.PIPE, 
-                      stderr=subprocess.PIPE, 
-                      check=True)
-        st.success("ffmpeg is already installed")
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        st.warning("ffmpeg not found, installing alternative...")
-        try:
-            # Install imageio-ffmpeg (Python package) instead
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "imageio-ffmpeg"])
-            # Configure environment to use it
-            os.environ["IMAGEIO_FFMPEG_EXE"] = os.path.join(sys.prefix, 'bin', 'ffmpeg')
-            st.success("Installed imageio-ffmpeg as alternative")
-        except Exception as e:
-            st.error(f"Failed to install ffmpeg alternative: {e}")
-            st.info("You may need to contact Streamlit support to enable ffmpeg for your deployment")
-
-# Run this once at app startup
-setup_ffmpeg()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # Initialize session state variables if they don't exist
 if 'story_saved' not in st.session_state:
     st.session_state.story_saved = False
