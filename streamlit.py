@@ -576,7 +576,7 @@ elif page == "YouTube Videos":
                     
                     # Search YouTube videos using Exa API
                     search_results = search_youtube_videos(search_query, num_results)
-                    st.session_state.youtube_search_results = search_results
+                    st.session_state.youtube_search_results = search_results                                                 
                     
                     if search_results:
                         st.write("Search Results:")
@@ -944,14 +944,9 @@ else:  # Story Generation
                     copy_button_key = f"copy_button_{category}_{i}"
                     
                     # Add a copy button for each prompt
-                    if st.button(
-                        "📋 Copy Prompt", 
-                        key=copy_button_key,
-                        help="Copy this prompt to use in the Generate Story tab"
-                    ):
-                        # Copy the prompt text to the clipboard
-                        pyperclip.copy(prompt_data['prompt'])
-                        st.success("✅ Prompt copied to clipboard! You can now paste it in the Generate Story tab.")
+                    if st.button("📋 Copy Prompt", key=copy_button_key):
+                        st.code(prompt_data['prompt'], language="text")
+                        st.toast("✅ Click the copy button in the code block to copy the prompt")
         
         # Add a section for custom prompt creation
         st.subheader("Create Your Own Prompt Template")
