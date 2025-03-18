@@ -6,6 +6,7 @@ import praw
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
+from youtube_url import get_video_id_from_url, get_video_info
 
 # Load environment variables from .env file
 load_dotenv()
@@ -36,6 +37,99 @@ def generate_search_query(user_query):
     chain = LLMChain(llm=llm, prompt=prompt)
     search_query = chain.run(user_query)
     return search_query.strip()
+
+def generate_youtube_search_query(user_query):
+    prompt = PromptTemplate(
+        input_variables=["user_query"],
+        template="""
+        Generate a specific, detailed search query to find relevant YouTube videos about: {user_query}
+        Make the query specific enough to return directly relevant results.
+        Focus on key topics, terms, and concepts that would appear in titles and descriptions.
+        """
+    )
+    chain = LLMChain(llm=llm, prompt=prompt)
+    search_query = chain.run(user_query)
+    return search_query.strip()
+
+
+# Add this function to exa_modified.py
+def search_youtube_videos(query, num_results=5):
+    headers = {
+        "Authorization": f"Bearer {EXA_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "query": f"{query} site:youtube.com",
+        "num_results": num_results * 3,  # Request more results to filter down
+        "include_domains": ["youtube.com"],
+        "highlight_results": False
+    }
+    
+    response = requests.post(
+        "https://api.exa.ai/search",
+        headers=headers,
+        json=data
+    )
+    
+    if response.status_code != 200:
+        raise Exception(f"Exa API request failed: {response.status_code}, {response.text}")
+    
+    search_results = response.json()
+    extracted_data = []
+    
+    for result in search_results.get("results", []):
+        try:
+            url = result.get("url", "")
+            
+            # Skip non-video URLs
+            if not ("youtube.com/watch" in url or "youtu.be/" in url):
+                continue
+            
+            # Use the existing function from youtube_url.py
+            video_id = get_video_id_from_url(url)
+            
+            if not video_id:
+                print(f"Could not extract video ID from URL: {url}")
+                continue
+            
+            # Instead of relying on Exa's metadata, fetch it directly from YouTube
+            video_info = get_video_info(url)
+            
+            if not video_info:
+                print(f"Could not fetch video info for: {url}")
+                # Use basic info from Exa as fallback
+                video_info = {
+                    'title': result.get("title", "Unknown Title"),
+                    'channel': "Unknown Channel",
+                    'duration': 0,
+                    'view_count': 0,
+                    'upload_date': "Unknown"
+                }
+            
+            # Create structured result with reliable metadata
+            video_data = {
+                "id": video_id,
+                "title": video_info['title'],
+                "url": url,
+                "snippet": result.get("text", "")[:200] + "..." if result.get("text") and len(result.get("text", "")) > 200 else result.get("text", ""),
+                "channel": video_info['channel'],
+                "duration": video_info['duration'],
+                "view_count": video_info['view_count'],
+                "upload_date": video_info['upload_date']
+            }
+            
+            extracted_data.append(video_data)
+            
+            # Limit to requested number of results
+            if len(extracted_data) >= num_results:
+                break
+                
+        except Exception as e:
+            print(f"Error processing YouTube result: {e}")
+            continue
+    
+    return extracted_data
 
 # Function to search Reddit posts using Exa API
 def search_reddit_posts(query, num_results=8):
@@ -110,7 +204,7 @@ def fetch_subreddit_posts(subreddit_name, sort_by="hot", time_filter="all", limi
         })
     
     return post_list
-
+ 
 # Function to fetch a single post by URL
 def fetch_post_by_url(url):
     post_id = url.split("/comments/")[1].split("/")[0]
