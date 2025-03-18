@@ -92,7 +92,7 @@ def download_video(video_url, output_dir=".", fs=None):
         'nocheckcertificate': True,
         'ignoreerrors': True,
         'no_warnings': True,
-        'quiet': False,  # Set to True in production
+        'quiet': True,  # Set to True in production
         'geo_bypass': True,
         'geo_bypass_country': 'US',
         'extractor_retries': 5,
