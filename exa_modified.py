@@ -50,7 +50,7 @@ def generate_youtube_search_query(user_query):
         """ 
     )       
     chain = LLMChain(llm=llm, prompt=prompt) 
-    search_query = chain.run(user_query)
+    search_query = chain.run(user_query) 
     return search_query.strip()
 
 

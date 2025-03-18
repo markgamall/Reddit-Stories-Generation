@@ -17,7 +17,7 @@ import contextlib
 default_model = "base.en"
 model = whisper.load_model(default_model)
 
-
+ 
 
 def sanitize_filename(filename):
     return re.sub(r'[<>:"/\\|?*]', '_', filename)
