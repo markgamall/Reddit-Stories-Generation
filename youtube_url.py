@@ -88,7 +88,7 @@ def download_video(video_url, output_dir=".", fs=None):
         'postprocessors': [
             {'key': 'FFmpegVideoConvertor', 'preferedformat': 'mp4'}
         ],
-        'proxy': 'http://your-proxy-server:port'  # Add proxy here
+        'proxy': 'http://103.237.144.232:1311'  # Add proxy here
     }
 
     try:
