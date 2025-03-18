@@ -29,6 +29,8 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 from bson.objectid import ObjectId
 import contextlib
+from gridfs import GridFS
+
 
 # Load environment variables
 load_dotenv()
@@ -41,6 +43,7 @@ db = client['reddit_stories_db']
 fetched_stories_collection = db['fetched_stories']
 generated_stories_collection = db['generated_stories']
 youtube_transcriptions_collection = db['youtube_transcriptions']
+fs = GridFS(db)
 
 # Initialize session state variables if they don't exist
 if 'story_saved' not in st.session_state:
@@ -483,10 +486,6 @@ elif page == "YouTube Videos":
     st.title("YouTube Video Transcriptions")
     
     # Create tabs for YouTube videos page
-    # Add this code to streamlit.py, inside the "YouTube Videos" page section
-    # Create tabs for YouTube videos page
-    # Add this code to streamlit.py, inside the "YouTube Videos" page section
-    # Create tabs for YouTube videos page
     tab1, tab2, tab3 = st.tabs([
         "Fetch YouTube Video", "Search YouTube Videos", "View YouTube Transcriptions"
     ])
@@ -499,7 +498,8 @@ elif page == "YouTube Videos":
         if st.button("Fetch Video Transcription", key="fetch_youtube_button"):
             with st.spinner("Fetching video transcription... This may take a moment."):
                 try:
-                    result = process_youtube_url(youtube_url)
+                    # Pass the GridFS object to process_youtube_url
+                    result = process_youtube_url(youtube_url, fs=fs)
                     
                     if result["success"]:
                         video_info = result["video_info"]
@@ -605,14 +605,14 @@ elif page == "YouTube Videos":
                     
                     with st.spinner("Fetching video transcription... This may take a moment."):
                         try:
-                            result = process_youtube_url(youtube_url)
+                            # Pass the GridFS object to process_youtube_url
+                            result = process_youtube_url(youtube_url, fs=fs)
                             
                             if result["success"]:
                                 video_info = result["video_info"]
                                 transcription = result["transcription"]
                                 method = result["method"]
                                 
-
                                 # Insert into MongoDB
                                 # Check if the YouTube URL already exists in the database
                                 existing_video = youtube_transcriptions_collection.find_one({'source_url': youtube_url})
