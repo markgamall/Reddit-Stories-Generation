@@ -13,7 +13,7 @@ import contextlib
 # Load the model once when the module is imported
 
 
-default_model = "base.en"
+default_model = "tiny.en"
 model = whisper.load_model(default_model)
 
 
