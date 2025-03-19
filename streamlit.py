@@ -45,8 +45,6 @@ generated_stories_collection = db['generated_stories']
 youtube_transcriptions_collection = db['youtube_transcriptions']
 fs = GridFS(db)
 
- 
-
 # Initialize session state variables if they don't exist
 if 'story_saved' not in st.session_state:
     st.session_state.story_saved = False

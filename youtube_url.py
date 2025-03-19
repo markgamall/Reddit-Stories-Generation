@@ -251,7 +251,7 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
         "success": True, 
         "transcription": transcript_text,
         "method": transcription_method,
-        "video_info": video_info, 
+        "video_info": video_info,
         "video_id": video_id
     }
 
