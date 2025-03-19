@@ -13,11 +13,10 @@ import contextlib
 # Load the model once when the module is imported
 
 
-
 default_model = "base.en"
 model = whisper.load_model(default_model)
 
- 
+
 
 def sanitize_filename(filename):
     return re.sub(r'[<>:"/\\|?*]', '_', filename)
@@ -136,7 +135,12 @@ def extract_audio_from_video(video_path, audio_output_dir):
         clip = None
         try:
             clip = VideoFileClip(video_path)
-            clip.audio.write_audiofile(audio_path, verbose=False, logger=None)
+            # Try with new API first, then fall back to old API if it fails
+            try:
+                clip.audio.write_audiofile(audio_path, logger=None)
+            except TypeError:
+                # Fall back to older version API
+                clip.audio.write_audiofile(audio_path, verbose=False, logger=None)
         finally:
             if clip:
                 clip.close()
