@@ -30,6 +30,9 @@ from dotenv import load_dotenv
 from bson.objectid import ObjectId
 import contextlib
 from gridfs import GridFS
+import re
+import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 
 # Load environment variables
