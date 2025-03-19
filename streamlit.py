@@ -1,4 +1,12 @@
 import streamlit as st
+import subprocess
+
+try:
+    subprocess.run(["ffmpeg", "-version"], check=True)
+    print("ffmpeg is installed and working!")
+except Exception as e:
+    print(f"ffmpeg is not installed or not working: {e}")
+
 from exa_modified import (
     generate_search_query,
     search_reddit_posts,
