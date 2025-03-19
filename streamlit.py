@@ -55,8 +55,8 @@ class MongoConnectionManager:
             # Configure connection pool settings
             cls._client = MongoClient(
                 mongo_uri,
-                maxPoolSize=10,  # Adjust based on your application needs
-                minPoolSize=1,
+                maxPoolSize=300,  # Adjust based on your application needs
+                minPoolSize=100,
                 maxIdleTimeMS=45000,  # Close idle connections after 45 seconds
                 waitQueueTimeoutMS=5000  # Wait up to 5 seconds for a connection
             )
