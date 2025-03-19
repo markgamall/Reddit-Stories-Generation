@@ -5,18 +5,12 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import TextFormatter
 import yt_dlp
 import re
-from moviepy import VideoFileClip
-from pydub import AudioSegment
 import whisper
 import contextlib
 
 # Load the model once when the module is imported
-
-
 default_model = "tiny.en"
 model = whisper.load_model(default_model)
-
-
 
 def sanitize_filename(filename):
     return re.sub(r'[<>:"/\\|?*]', '_', filename)
@@ -86,75 +80,43 @@ def check_transcription_validity(transcription):
     else:
         return "valid"
 
-def download_video(video_url, output_dir="."):
-    # Ensure the output directory exists
+def download_audio_directly(video_url, output_dir="."):
+    """Download just the audio track using yt-dlp without requiring ffmpeg"""
     os.makedirs(output_dir, exist_ok=True)
     
-    # Create a temporary filename that doesn't rely on the video title
-    temp_filename = f"temp_video_{int(time.time())}"
+    temp_filename = f"temp_audio_{int(time.time())}"
     output_template = os.path.join(output_dir, f"{temp_filename}.%(ext)s")
     
     opts = {
-        'format': 'best[height<=720]',  # Limit resolution to 720p to speed up download
+        'format': 'bestaudio',  # Get best audio
         'outtmpl': output_template,
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
-        'postprocessors': [
-            {'key': 'FFmpegVideoConvertor', 'preferedformat': 'mp4'}
-        ]
+        # No ffmpeg post-processors
     }
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info_dict = ydl.extract_info(video_url, download=True)
             video_title = sanitize_filename(info_dict.get('title', 'Unknown_Title'))
-            print(f"Video downloaded with temp name: {temp_filename}.mp4")
             
-            # The actual file path based on the output template
-            video_path = os.path.join(output_dir, f"{temp_filename}.mp4")
-            if not os.path.exists(video_path):
-                # If the exact filename doesn't exist, try to find a matching file
-                for file in os.listdir(output_dir):
-                    if file.startswith(temp_filename) and file.endswith(".mp4"):
-                        video_path = os.path.join(output_dir, file)
-                        break
-                        
-            return video_path, video_title
+            # Find the downloaded file
+            audio_path = None
+            for file in os.listdir(output_dir):
+                if file.startswith(temp_filename):
+                    audio_path = os.path.join(output_dir, file)
+                    break
+                    
+            if audio_path:
+                print(f"Audio downloaded to: {audio_path}")
+                return audio_path, video_title
+            else:
+                print("Could not locate downloaded audio file")
+                return None, video_title
     except Exception as e:
-        print(f"Error downloading video: {e}")
+        print(f"Error downloading audio: {e}")
         return None, None
-
-def extract_audio_from_video(video_path, audio_output_dir):
-    """Extract audio from video with error handling and directory management"""
-    os.makedirs(audio_output_dir, exist_ok=True)
-    audio_path = os.path.join(audio_output_dir, "output_audio.wav")
-    audio_trimmed_path = os.path.join(audio_output_dir, "output_audio_trimmed.wav")
-    
-    try:
-        clip = None
-        try:
-            clip = VideoFileClip(video_path)
-            # Try with new API first, then fall back to old API if it fails
-            try:
-                clip.audio.write_audiofile(audio_path, logger=None)
-            except TypeError:
-                # Fall back to older version API
-                clip.audio.write_audiofile(audio_path, verbose=False, logger=None)
-        finally:
-            if clip:
-                clip.close()
-
-        # Convert to format suitable for Whisper
-        audio = AudioSegment.from_file(audio_path)
-        audio = audio.set_channels(1).set_frame_rate(16000)
-        audio.export(audio_trimmed_path, format="wav")
-
-        print(f"Audio extracted and saved to: {audio_trimmed_path}")
-        return audio_trimmed_path
-    except Exception as e:
-        print(f"Error extracting audio from video: {e}")
-        return None
 
 def generate_whisper_transcription(audio_path):
     try:
@@ -174,7 +136,8 @@ def generate_whisper_transcription(audio_path):
         return None
 
 def process_youtube_url(video_url, output_dir=None, fs=None):
-    """Process a YouTube URL to get transcription using either YouTube API or Whisper"""
+    """Process a YouTube URL to get transcription using either YouTube API or Whisper.
+    This version skips video download and extracts audio directly."""
     # Use a temporary directory if none specified
     if output_dir is None or output_dir == ".":
         temp_base_dir = tempfile.gettempdir()
@@ -198,21 +161,15 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
     if not transcript_text or check_transcription_validity(transcript_text) == "not valid":
         print("YouTube transcription not available or invalid. Using Whisper...")
         
-        # Create specific directories for this process
-        video_dir = os.path.join(output_dir, "video")
+        # Create specific directory for audio
         audio_dir = os.path.join(output_dir, "audio")
-        os.makedirs(video_dir, exist_ok=True)
         os.makedirs(audio_dir, exist_ok=True)
         
-        video_path, video_title = download_video(video_url, video_dir)
-        
-        if not video_path:
-            return {"success": False, "error": "Failed to download video"}
-        
-        audio_path = extract_audio_from_video(video_path, audio_dir)
+        # Download audio directly instead of downloading video then extracting audio
+        audio_path, video_title = download_audio_directly(video_url, audio_dir)
         
         if not audio_path:
-            return {"success": False, "error": "Failed to extract audio from video"}
+            return {"success": False, "error": "Failed to download audio"}
         
         transcript_text = generate_whisper_transcription(audio_path)
         transcription_method = "Whisper"
@@ -228,19 +185,12 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
         
         # Clean up temporary files
         try:
-            # Use contextlib to suppress errors during cleanup
             with contextlib.suppress(Exception):
-                if os.path.exists(video_path):
-                    os.remove(video_path)
+                if os.path.exists(audio_path):
+                    os.remove(audio_path)
                     
-                for audio_file in [os.path.join(audio_dir, "output_audio.wav"), 
-                                  os.path.join(audio_dir, "output_audio_trimmed.wav")]:
-                    if os.path.exists(audio_file):
-                        os.remove(audio_file)
-                        
             # Try to clean up the directories
             with contextlib.suppress(Exception):
-                os.rmdir(video_dir)
                 os.rmdir(audio_dir)
                 # Only remove the output_dir if we created it as a temp dir
                 if output_dir.startswith(tempfile.gettempdir()):
