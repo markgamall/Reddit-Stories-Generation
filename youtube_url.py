@@ -7,6 +7,11 @@ import yt_dlp
 import re
 import whisper
 import contextlib
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load the model once when the module is imported
 default_model = "tiny.en"
@@ -42,13 +47,13 @@ def get_video_info(video_url):
                 'upload_date': info_dict.get('upload_date', 'Unknown')
             }
     except Exception as e:
-        print(f"Error fetching video info: {e}")
+        logger.error(f"Error fetching video info: {e}")
         return None
 
 def get_video_transcription(video_id, output_name=None):
     try:
         transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        print("YouTube transcript fetched successfully.")
+        logger.info("YouTube transcript fetched successfully.")
 
         formatter = TextFormatter()
         transcript_text = formatter.format_transcript(transcript)
@@ -57,11 +62,11 @@ def get_video_transcription(video_id, output_name=None):
             file_path = f"{output_name}_youtube_transcription.txt"
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(transcript_text)
-            print(f"YouTube transcription saved as: {file_path}")
+            logger.info(f"YouTube transcription saved as: {file_path}")
         
         return transcript_text
     except Exception as e:
-        print(f"Error fetching YouTube transcription: {e}")
+        logger.error(f"Error fetching YouTube transcription: {e}")
         return None
 
 def check_transcription_validity(transcription):
@@ -109,30 +114,30 @@ def download_audio_directly(video_url, output_dir="."):
                     break
                     
             if audio_path:
-                print(f"Audio downloaded to: {audio_path}")
+                logger.info(f"Audio downloaded to: {audio_path}")
                 return audio_path, video_title
             else:
-                print("Could not locate downloaded audio file")
+                logger.error("Could not locate downloaded audio file")
                 return None, video_title
     except Exception as e:
-        print(f"Error downloading audio: {e}")
+        logger.error(f"Error downloading audio: {e}")
         return None, None
 
 def generate_whisper_transcription(audio_path):
     try:
         audio = whisper.load_audio(audio_path)
-        print("Audio loaded successfully for Whisper.")
+        logger.info("Audio loaded successfully for Whisper.")
 
         start_time = time.time()
         transcription = model.transcribe(audio)
         end_time = time.time()
 
         elapsed_time = end_time - start_time
-        print(f"Time Taken by Whisper: {elapsed_time:.4f} seconds")
+        logger.info(f"Time Taken by Whisper: {elapsed_time:.4f} seconds")
         
         return transcription["text"]
     except Exception as e:
-        print(f"Error generating Whisper transcription: {e}")
+        logger.error(f"Error generating Whisper transcription: {e}")
         return None
 
 def process_youtube_url(video_url, output_dir=None, fs=None):
@@ -159,7 +164,7 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
     
     # If YouTube transcription fails or is invalid, use Whisper
     if not transcript_text or check_transcription_validity(transcript_text) == "not valid":
-        print("YouTube transcription not available or invalid. Using Whisper...")
+        logger.info("YouTube transcription not available or invalid. Using Whisper...")
         
         # Create specific directory for audio
         audio_dir = os.path.join(output_dir, "audio")
@@ -179,9 +184,9 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
             try:
                 with open(audio_path, 'rb') as audio_file:
                     audio_file_id = fs.put(audio_file, filename=f"{video_title}_audio.wav")
-                    print(f"Audio file stored in GridFS with ID: {audio_file_id}")
+                    logger.info(f"Audio file stored in GridFS with ID: {audio_file_id}")
             except Exception as e:
-                print(f"Error storing audio in GridFS: {e}")
+                logger.error(f"Error storing audio in GridFS: {e}")
         
         # Clean up temporary files
         try:
@@ -196,7 +201,7 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
                 if output_dir.startswith(tempfile.gettempdir()):
                     os.rmdir(output_dir)
         except Exception as e:
-            print(f"Warning during cleanup: {e}")
+            logger.warning(f"Warning during cleanup: {e}")
     
     if not transcript_text:
         return {"success": False, "error": "Failed to generate transcription"}
