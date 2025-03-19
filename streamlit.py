@@ -19,6 +19,7 @@ from datetime import datetime
 import openai
 import tempfile
 import os
+import atexit
 import requests
 import sys
 import json
@@ -36,14 +37,55 @@ from gridfs import GridFS
 load_dotenv()
 openai_client = openai.OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
-# Initialize MongoDB connection
-mongo_uri = os.environ['MONGO_URI']
-client = MongoClient(mongo_uri)
-db = client['reddit_stories_db']
+
+
+
+
+
+
+class MongoConnectionManager:
+    _instance = None
+    _client = None
+    
+    @classmethod
+    def get_client(cls):
+        if cls._client is None:
+            # Load connection string from environment
+            mongo_uri = os.environ['MONGO_URI']
+            # Configure connection pool settings
+            cls._client = MongoClient(
+                mongo_uri,
+                maxPoolSize=10,  # Adjust based on your application needs
+                minPoolSize=1,
+                maxIdleTimeMS=45000,  # Close idle connections after 45 seconds
+                waitQueueTimeoutMS=5000  # Wait up to 5 seconds for a connection
+            )
+        return cls._client
+    
+    @classmethod
+    def get_database(cls, db_name='reddit_stories_db'):
+        client = cls.get_client()
+        return client[db_name]
+        
+    @classmethod
+    def close(cls):
+        if cls._client:
+            cls._client.close()
+            cls._client = None
+
+
+
+db = MongoConnectionManager.get_database()
 fetched_stories_collection = db['fetched_stories']
 generated_stories_collection = db['generated_stories']
 youtube_transcriptions_collection = db['youtube_transcriptions']
 fs = GridFS(db)
+
+
+def cleanup_resources():
+    """Clean up database connections and other resources when app exits"""
+    MongoConnectionManager.close()
+    print("Database connections closed")
 
 # Initialize session state variables if they don't exist
 if 'story_saved' not in st.session_state:
@@ -283,6 +325,9 @@ else:  # Story Generation
     5. **Generate and enjoy** your creative story!
     6. View your previously generated stories in the third tab.
     """)
+
+
+atexit.register(cleanup_resources)
 
 # Main content based on selected page
 if page == "Reddit Stories":
