@@ -50,7 +50,10 @@ openai_client = openai.OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
 @st.cache_resource
 def get_db_client():
-    client = MongoClient(os.environ['MONGO_URI'], maxPoolSize=50, waitQueueTimeoutMS=5000) 
+    client = MongoClient(os.environ['MONGO_URI'], maxPoolSize=50, waitQueueTimeoutMS=5000)
+    
+    # Ensure MongoDB connection closes when Streamlit shuts down
+    atexit.register(client.close)  
     
     return client
  
@@ -283,7 +286,6 @@ if page == "Reddit Stories":
     2. **Save the post** to use it as inspiration for story generation.
     3. **View your saved posts** in the fourth tab.
     4. Go to the Story Generation page when ready to create your story.
-    55555555
     """)
 
 elif page == "YouTube Videos":
