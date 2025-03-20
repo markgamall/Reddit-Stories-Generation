@@ -50,10 +50,7 @@ openai_client = openai.OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
 @st.cache_resource
 def get_db_client():
-    client = MongoClient(os.environ['MONGO_URI'], maxPoolSize=50, waitQueueTimeoutMS=5000)
-    
-    # Ensure MongoDB connection closes when Streamlit shuts down
-    atexit.register(client.close)  
+    client = MongoClient(os.environ['MONGO_URI'], maxPoolSize=50, waitQueueTimeoutMS=5000) 
     
     return client
  
