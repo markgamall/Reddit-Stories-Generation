@@ -41,6 +41,7 @@ from gridfs import GridFS
 import re
 import warnings
 warnings.filterwarnings("ignore", category=SyntaxWarning)
+import atexit
 
 
 # Load environment variables
@@ -49,7 +50,12 @@ openai_client = openai.OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
 @st.cache_resource
 def get_db_client():
-    return MongoClient(os.environ['MONGO_URI'], maxPoolSize=50, waitQueueTimeoutMS=5000)
+    client = MongoClient(os.environ['MONGO_URI'], maxPoolSize=50, waitQueueTimeoutMS=5000)
+    
+    # Ensure MongoDB connection closes when Streamlit shuts down
+    atexit.register(client.close)  
+    
+    return client
  
 client = get_db_client()
 db = client['reddit_stories_db']
@@ -270,6 +276,9 @@ page = st.sidebar.radio(
 
 # Set the current page in session state
 st.session_state.page = page
+
+# Display active MongoDB connections
+st.sidebar.write("Active MongoDB connections:", client.server_info()['connections']['current'])
 
 # Sidebar Instructions
 st.sidebar.subheader("Instructions")
