@@ -289,6 +289,8 @@ if page == "Reddit Stories":
     3. **View your saved posts** in the fourth tab.
     4. Go to the Story Generation page when ready to create your story.
     """)
+    st.sidebar.write("Active MongoDB connections:", client.server_info()['connections']['current'])
+
 elif page == "YouTube Videos":
     st.sidebar.markdown("""
     1. **Fetch a YouTube video** by entering its URL or searching by query.
