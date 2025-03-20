@@ -47,9 +47,11 @@ warnings.filterwarnings("ignore", category=SyntaxWarning)
 load_dotenv()
 openai_client = openai.OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
-# Initialize MongoDB connection
-mongo_uri = os.environ['MONGO_URI']
-client = MongoClient(mongo_uri)
+@st.cache_resource
+def get_db_client():
+    return MongoClient(os.environ['MONGO_URI'], maxPoolSize=50, waitQueueTimeoutMS=5000)
+
+client = get_db_client()
 db = client['reddit_stories_db']
 fetched_stories_collection = db['fetched_stories']
 generated_stories_collection = db['generated_stories']
@@ -830,7 +832,7 @@ else:  # Story Generation
                         with st.spinner("Generating audio narration..."):
                             try:
                                 audio_path = generate_speech(st.session_state.generated_story_text)
-                                if audio_path:
+                                if (audio_path):
                                     st.session_state.generated_audio_path = audio_path
                                     st.success("Story narration ready! Listen below:")
                                 else:
