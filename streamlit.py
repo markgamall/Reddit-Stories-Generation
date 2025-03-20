@@ -50,7 +50,7 @@ openai_client = openai.OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 @st.cache_resource
 def get_db_client():
     return MongoClient(os.environ['MONGO_URI'], maxPoolSize=50, waitQueueTimeoutMS=5000)
-
+ 
 client = get_db_client()
 db = client['reddit_stories_db']
 fetched_stories_collection = db['fetched_stories']
