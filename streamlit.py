@@ -277,8 +277,6 @@ page = st.sidebar.radio(
 # Set the current page in session state
 st.session_state.page = page
 
-# Display active MongoDB connections
-st.sidebar.write("Active MongoDB connections:", client.server_info()['connections']['current'])
 
 # Sidebar Instructions
 st.sidebar.subheader("Instructions")
@@ -288,9 +286,8 @@ if page == "Reddit Stories":
     2. **Save the post** to use it as inspiration for story generation.
     3. **View your saved posts** in the fourth tab.
     4. Go to the Story Generation page when ready to create your story.
-    5. HAHAHAHAHAHAH
+    55555555
     """)
-    st.sidebar.write("Active MongoDB connections:", client.server_info()['connections']['current'])
 
 elif page == "YouTube Videos":
     st.sidebar.markdown("""
