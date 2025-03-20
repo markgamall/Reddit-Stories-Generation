@@ -288,7 +288,7 @@ if page == "Reddit Stories":
     2. **Save the post** to use it as inspiration for story generation.
     3. **View your saved posts** in the fourth tab.
     4. Go to the Story Generation page when ready to create your story.
-    55555555555555555555555
+    5. HAHAHAHAHAHAH
     """)
     st.sidebar.write("Active MongoDB connections:", client.server_info()['connections']['current'])
 
