@@ -173,6 +173,39 @@ class ErrorBoundary(contextlib.ContextDecorator):
             return False
         return False
 
+
+def count_words_and_chars(text):
+    """
+    Counts the number of words and characters in a given text string.
+    
+    Args:
+        text (str): The input string to analyze
+        
+    Returns:
+        dict: A dictionary containing:
+            - 'word_count': Number of words in the text
+            - 'char_count': Number of characters in the text (including spaces)
+            - 'char_count_no_spaces': Number of characters excluding spaces
+    """
+    if not isinstance(text, str):
+        raise ValueError("Input must be a string")
+    
+    # Count words (split by whitespace and filter out empty strings)
+    words = [word for word in text.split() if word]
+    word_count = len(words)
+    
+    # Count characters
+    char_count = len(text)
+    char_count_no_spaces = len(text.replace(" ", ""))
+    
+    return {
+        'word_count': word_count,
+        'char_count': char_count,
+        'char_count_no_spaces': char_count_no_spaces
+}
+
+
+
 def generate_speech(text):
     """Generate narration audio with a specific voice style using OpenAI's TTS API"""
     try:
@@ -221,20 +254,22 @@ def generate_speech(text):
 
         return None
 
-def generate_speech_default(text):
-    """
-    Generate audio from text using OpenAI's TTS API with a custom voice description.
-    
-    Voice description: A young female voice with a warm, expressive tone that's engaging 
-    and conversational. The voice has a slight touch of emotion, speaking clearly with good
-    pacing and natural inflections. It sounds like a friendly storyteller who's genuinely 
-    interested in sharing an exciting story.
-    """
+OPENAI_VOICES = {
+    "Alloy": "alloy",
+    "Echo": "echo",
+    "Fable": "fable",
+    "Onyx": "onyx",
+    "Nova": "nova",
+    "Shimmer": "shimmer",
+    "Custom Audiobook Narration": "custom"  # This will use your custom generate_speech function
+}
+
+def generate_speech_default(text, voice="nova"):
+    """Generate speech using standard OpenAI TTS with selectable voice"""
     try:
-        # Using 'nova' voice which is a female voice that matches our description best
         response = openai_client.audio.speech.create(
             model="tts-1",
-            voice="nova",
+            voice=voice,
             input=text
         )
         
@@ -247,7 +282,6 @@ def generate_speech_default(text):
     except Exception as e:
         st.error(f"Error generating speech: {str(e)}")
         log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
-
         return None
 
 # Function to load a story from MongoDB to the text file
@@ -355,7 +389,7 @@ if page == "Reddit Stories":
                 st.session_state.posts = posts  # Store posts in session state
                 st.write("Fetched Posts:")
                 for i, post in enumerate(posts):
-                    st.write(f"{i + 1}. {post['title']} (Score: {post['score']}, Comments: {post['num_comments']})")
+                    st.write(f"{i + 1}. {post['title']} (Score (Net Upvotes): {post['score']}, Comments: {post['num_comments']})")
                     with st.expander("View URL"):
                         st.write(post['url'])
         
@@ -428,7 +462,7 @@ if page == "Reddit Stories":
                 st.session_state.detailed_posts = detailed_posts  # Store posts in session state
                 st.write("Fetched Posts:")
                 for i, post in enumerate(detailed_posts):
-                    st.write(f"{i + 1}. {post['title']} (Score: {post['score']}, Comments: {post['num_comments']})")
+                    st.write(f"{i + 1}. {post['title']} (Score (Net Upvotes): {post['score']}, Comments: {post['num_comments']})")
                     with st.expander("View URL"):
                         st.write(post['url'])
         
@@ -765,8 +799,8 @@ else:  # Story Generation
                                     height=100, 
                                     help="This prompt will guide the story generation based on the saved content.")
             
-            min_words = st.number_input("Minimum number of words:", min_value=10, max_value=5000, value=500)
-            max_words = st.number_input("Maximum number of words:", min_value=10, max_value=5000, value=1000)
+            min_words = st.number_input("Minimum number of words (Min: 10, Max: 5000):", min_value=10, max_value=5000, value=500)
+            max_words = st.number_input("Maximum number of words (Min: 10, Max: 5000):", min_value=10, max_value=5000, value=1000)
             
             # Store generated content in session state
             if 'generated_story_text' not in st.session_state:
@@ -816,6 +850,11 @@ else:  # Story Generation
                 with col1:
                     st.metric("Response Time", f"{result['response_time']:.2f} seconds")
                 
+                # Count words and characters
+                counts = count_words_and_chars(st.session_state.generated_story_text)
+                st.markdown(f"<p style='font-size:14px;'>Word Count: {counts['word_count']}<br>Character Count (excluding spaces): {counts['char_count_no_spaces']}</p>", unsafe_allow_html=True)
+
+                
                 # Optionally display similar documents used for generation
                 with st.expander("View Source Passages Used"):
                     for i, doc in enumerate(result['similar_documents']):
@@ -834,22 +873,52 @@ else:  # Story Generation
 
                 st.subheader("Listen to Your Story")
                 
+                edited_story = st.text_area(
+                    "Edit your story before generating narration:",
+                    value=st.session_state.generated_story_text,
+                    height=300,
+                    key="editable_story"
+                )
+
+                # Update the session state if the user makes edits
+                if edited_story != st.session_state.generated_story_text:
+                    st.session_state.generated_story_text = edited_story
+                    st.session_state.generated_audio_path = None  # Reset audio since the text changed
+                    st.success("Story edits saved! You can now generate narration with your changes.")
+
+                # Add voice selection dropdown
+                selected_voice = st.selectbox(
+                    "Select Narration Voice",
+                    options=list(OPENAI_VOICES.keys()),
+                    index=4,  # Default to Nova
+                    key="voice_selection",
+                )
+                st.markdown(f"<p style='font-size:14px;'>Voice Options:<br>Alloy, Echo, Fable, Onyx, Nova, Shimmer: Standard OpenAI TTS voices<br>Custom Audiobook Narration: Professional narrator style with dramatic pacing and emphasis</p>", unsafe_allow_html=True)
+
                 # Check if audio was already generated
-                if st.session_state.generated_audio_path is None:
-                    if st.button("Generate Audio Narration", key="generate_audio_button"):
-                        with st.spinner("Generating audio narration..."):
-                            try:
+                if st.button("Generate Audio Narration", key="generate_audio_button"):
+                    with st.spinner("Generating audio narration..."):
+                        try:
+                            if OPENAI_VOICES[selected_voice] == "custom":
+                                # Use your custom audiobook narration style
                                 audio_path = generate_speech(st.session_state.generated_story_text)
-                                if (audio_path):
-                                    st.session_state.generated_audio_path = audio_path
-                                    st.success("Story narration ready! Listen below:")
-                                else:
-                                    st.error("Could not generate audio narration. Please try again.")
-                                    log_error_to_db("Failed to generate audio narration", "Audio Generation Error", "")
-                            except Exception as e:
-                                st.error(f"Error generating speech: {str(e)}")
-                                log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
-                
+                            else:
+                                # Use the standard OpenAI TTS with selected voice
+                                audio_path = generate_speech_default(
+                                    st.session_state.generated_story_text,
+                                    voice=OPENAI_VOICES[selected_voice]
+                                )
+                            
+                            if audio_path:
+                                st.session_state.generated_audio_path = audio_path
+                                st.success("Story narration ready! Listen below:")
+                            else:
+                                st.error("Could not generate audio narration. Please try again.")
+                                log_error_to_db("Failed to generate audio narration", "Audio Generation Error", "")
+                        except Exception as e:
+                            st.error(f"Error generating speech: {str(e)}")
+                            log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
+
                 # Display audio player and download button if audio exists
                 if st.session_state.generated_audio_path:
                     st.audio(st.session_state.generated_audio_path)
@@ -1002,11 +1071,14 @@ else:  # Story Generation
         # Get all generated stories from MongoDB
         generated_stories = list(generated_stories_collection.find().sort("timestamp", -1))  # Sort by newest first
         
-        if generated_stories:
-            st.info(f"Found {len(generated_stories)} generated stories")
+        # Filter out duplicate stories based on unique fields (e.g., 'story' content)
+        unique_stories = {story['story']: story for story in generated_stories}.values()
+        
+        if unique_stories:
+            st.info(f"Found {len(unique_stories)} unique generated stories")
             
             # Display stories with expanders
-            for story in generated_stories:
+            for story in unique_stories:
                 story_timestamp = story['timestamp'].strftime('%Y-%m-%d %H:%M:%S') if 'timestamp' in story else "Unknown date"
                 story_title = f"Story generated on {story_timestamp}"
                 
@@ -1019,6 +1091,12 @@ else:  # Story Generation
                     st.markdown("**Story:**")
                     st.markdown(story['story'])
                     
+                    # Count words and characters
+                    counts = count_words_and_chars(story['story'])
+                    st.markdown(f"**Word Count:** {counts['word_count']}")
+                    #st.markdown(f"**Character Count (including spaces):** {counts['char_count']}")
+                    st.markdown(f"**Character Count (excluding spaces):** {counts['char_count_no_spaces']}")
+                    
                     # Download button for each story
                     st.download_button(
                         label="Download This Story",
@@ -1029,3 +1107,4 @@ else:  # Story Generation
                     )
         else:
             st.info("No generated stories available. Use the 'Generate Story' tab to create stories based on Reddit posts or YouTube transcriptions.")
+
