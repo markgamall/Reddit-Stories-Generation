@@ -221,7 +221,7 @@ def generate_story(user_prompt, min_words, max_words, source_title):
         
         # For longer stories (over 800 words), use chunking strategy
         else:
-            max_retries = 0  # Maximum number of retries if word count is off
+            max_retries = 1  # Maximum number of retries if word count is off
             current_retry = 0
 
             while current_retry < max_retries:
