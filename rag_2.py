@@ -132,35 +132,38 @@ prompt = ChatPromptTemplate.from_template(
 
 # Function to generate a story
 def generate_story(user_prompt, min_words, max_words, source_title):
-    # Load from the text file
-    file_path = "reddit_story.txt"
-    if not os.path.exists(file_path):
-        raise Exception("No story content available")
-    
-    with open(file_path, "r", encoding="utf-8") as file:
-        content = file.read()
-
-    # Split the content into chunks
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    final_documents = text_splitter.create_documents([content])
-
-    # Generate a unique ID for this request to avoid conflicts
-    unique_id = uuid.uuid4().hex
-    
-    # Create a FAISS vector store with the documents
-    vectors = FAISS.from_documents(final_documents, embeddings)
-    
-    # Create the retrieval chain
-    document_chain = create_stuff_documents_chain(llm, prompt)
-    retriever = vectors.as_retriever()
-    retrieval_chain = create_retrieval_chain(retriever, document_chain)
-
-    start = time.process_time()
-    
     try:
+        # Load from the text file
+        file_path = "reddit_story.txt"
+        if not os.path.exists(file_path):
+            raise Exception("No story content available")
+        
+        with open(file_path, "r", encoding="utf-8") as file:
+            content = file.read()
+            print(f"Loaded content from file, length: {len(content)}")
+
+        # Split the content into chunks
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        final_documents = text_splitter.create_documents([content])
+        print(f"Created {len(final_documents)} document chunks")
+
+        # Generate a unique ID for this request to avoid conflicts
+        unique_id = uuid.uuid4().hex
+        
+        # Create a FAISS vector store with the documents
+        print("Creating FAISS vector store...")
+        vectors = FAISS.from_documents(final_documents, embeddings)
+        
+        # Create the retrieval chain
+        print("Creating retrieval chain...")
+        document_chain = create_stuff_documents_chain(llm, prompt)
+        retriever = vectors.as_retriever()
+        retrieval_chain = create_retrieval_chain(retriever, document_chain)
+
+        start = time.process_time()
+        
         # For short stories (under 800 words), use simple generation
         if max_words <= 800:
-            # Log the parameters
             print(f"Generating short story with min_words: {min_words}, max_words: {max_words}")
             
             # Generate the story in one go
@@ -169,65 +172,78 @@ def generate_story(user_prompt, min_words, max_words, source_title):
                 max_words=max_words
             )
             
-            # Log the formatted system message
             print(f"System message word count requirements: {min_words}-{max_words} words")
             
-            response = retrieval_chain.invoke({
-                "input": user_prompt,
-                "system_message": system_message
-            })
-            
-            # Validate response
-            if not response or 'answer' not in response:
-                raise Exception("Failed to generate story: No response received from the model")
-            
-            final_story = response['answer']
-            if not final_story or not isinstance(final_story, str):
-                raise Exception("Failed to generate story: Invalid response format")
-            
-            final_word_count = len(final_story.split())
-            
-            # Log the result
-            print(f"Generated story word count: {final_word_count}")
-            
-            # Use the vector store to get documents and scores
-            docs_with_scores = vectors.similarity_search_with_score(user_prompt, k=5)
+            try:
+                print("Invoking retrieval chain...")
+                response = retrieval_chain.invoke({
+                    "input": user_prompt,
+                    "system_message": system_message
+                })
+                print(f"Retrieval chain response type: {type(response)}")
+                print(f"Response keys: {response.keys() if response else 'None'}")
+                
+                # Validate response
+                if not response:
+                    raise Exception("Retrieval chain returned None")
+                if 'answer' not in response:
+                    raise Exception(f"Response missing 'answer' key. Available keys: {response.keys()}")
+                
+                final_story = response['answer']
+                if not final_story:
+                    raise Exception("Generated story is empty")
+                if not isinstance(final_story, str):
+                    raise Exception(f"Generated story is not a string. Type: {type(final_story)}")
+                
+                final_word_count = len(final_story.split())
+                print(f"Generated story word count: {final_word_count}")
+                
+                # Use the vector store to get documents and scores
+                docs_with_scores = vectors.similarity_search_with_score(user_prompt, k=5)
 
-            elapsed_time = time.process_time() - start
+                elapsed_time = time.process_time() - start
 
-            # Save the generated story to MongoDB
-            generated_story = {
-                'prompt': user_prompt,
-                'story': final_story,
-                'response_time': elapsed_time,
-                'timestamp': datetime.now(),
-                'source_story_title': source_title,
-                'unique_id': unique_id,
-                'num_chunks': 1,
-                'chunk_size': final_word_count,
-                'final_word_count': final_word_count,
-                'min_words_requested': min_words,
-                'max_words_requested': max_words,
-                'attempts': 1
-            }
-            generated_stories_collection.insert_one(generated_story)
+                # Save the generated story to MongoDB
+                generated_story = {
+                    'prompt': user_prompt,
+                    'story': final_story,
+                    'response_time': elapsed_time,
+                    'timestamp': datetime.now(),
+                    'source_story_title': source_title,
+                    'unique_id': unique_id,
+                    'num_chunks': 1,
+                    'chunk_size': final_word_count,
+                    'final_word_count': final_word_count,
+                    'min_words_requested': min_words,
+                    'max_words_requested': max_words,
+                    'attempts': 1
+                }
+                generated_stories_collection.insert_one(generated_story)
 
-            # Format the response
-            result = {
-                'answer': final_story,
-                'response_time': elapsed_time,
-                'similar_documents': [
-                    {
-                        'content': doc.page_content,
-                        'similarity_score': float(score)  
-                    } for doc, score in docs_with_scores
-                ]
-            }
-            
-            return result
+                # Format the response
+                result = {
+                    'answer': final_story,
+                    'response_time': elapsed_time,
+                    'similar_documents': [
+                        {
+                            'content': doc.page_content,
+                            'similarity_score': float(score)  
+                        } for doc, score in docs_with_scores
+                    ]
+                }
+                
+                return result
+                
+            except Exception as e:
+                print(f"Error during story generation: {str(e)}")
+                print(f"Error type: {type(e)}")
+                import traceback
+                print(f"Traceback: {traceback.format_exc()}")
+                raise Exception(f"Failed to generate story: {str(e)}")
         
         # For longer stories (over 800 words), use chunking strategy
         else:
+            print(f"Generating long story with min_words: {min_words}, max_words: {max_words}")
             max_retries = 0  # Maximum number of retries if word count is off
             current_retry = 0
 
@@ -235,6 +251,7 @@ def generate_story(user_prompt, min_words, max_words, source_title):
                 try:
                     # Calculate target word count (aim for middle of range)
                     target_word_count = (min_words + max_words) // 2
+                    print(f"Target word count: {target_word_count}")
                     
                     # Calculate optimal chunk size based on target word count
                     if target_word_count <= 2000:
@@ -244,12 +261,13 @@ def generate_story(user_prompt, min_words, max_words, source_title):
                         chunk_size = 600
                         num_chunks = max(1, (target_word_count + chunk_size - 1) // chunk_size)
                     else:  # For 3000+ words
-                        # Adjust chunk size based on target word count
                         if target_word_count <= 4000:
                             chunk_size = 500
                         else:
-                            chunk_size = 450  # Smaller chunks for larger stories
+                            chunk_size = 450
                         num_chunks = max(1, (target_word_count + chunk_size - 1) // chunk_size)
+                    
+                    print(f"Using {num_chunks} chunks of size {chunk_size}")
                     
                     # Ensure we don't exceed reasonable number of chunks
                     max_chunks = 12  # Increased to 12 for larger stories
@@ -394,48 +412,15 @@ def generate_story(user_prompt, min_words, max_words, source_title):
                             chunk_size = int(chunk_size * 0.9)  # Decrease chunk size by 10%
 
                 except Exception as e:
-                    if current_retry >= max_retries:
-                        # Instead of raising an error, return the last generated story if available
-                        if 'final_story' in locals():
-                            docs_with_scores = vectors.similarity_search_with_score(user_prompt, k=5)
-                            elapsed_time = time.process_time() - start
-
-                            # Save the generated story to MongoDB with error note
-                            generated_story = {
-                                'prompt': user_prompt,
-                                'story': final_story,
-                                'response_time': elapsed_time,
-                                'timestamp': datetime.now(),
-                                'source_story_title': source_title,
-                                'unique_id': unique_id,
-                                'num_chunks': num_chunks,
-                                'chunk_size': chunk_size,
-                                'final_word_count': len(final_story.split()),
-                                'target_word_count': target_word_count,
-                                'attempts': current_retry + 1,
-                                'error_note': str(e)
-                            }
-                            generated_stories_collection.insert_one(generated_story)
-
-                            # Format the response
-                            result = {
-                                'answer': final_story,
-                                'response_time': elapsed_time,
-                                'similar_documents': [
-                                    {
-                                        'content': doc.page_content,
-                                        'similarity_score': float(score)  
-                                    } for doc, score in docs_with_scores
-                                ],
-                                'error_note': str(e)
-                            }
-                            
-                            return result
-                        else:
-                            # If no story was generated at all, raise the error
-                            raise Exception(f"Error generating story: {str(e)}")
-                    current_retry += 1
-                    continue
+                    print(f"Error during chunk generation: {str(e)}")
+                    print(f"Error type: {type(e)}")
+                    import traceback
+                    print(f"Traceback: {traceback.format_exc()}")
+                    raise Exception(f"Failed to generate story chunks: {str(e)}")
 
     except Exception as e:
+        print(f"Top-level error in generate_story: {str(e)}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         raise Exception(f"Error generating story: {str(e)}")
