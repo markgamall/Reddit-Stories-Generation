@@ -214,7 +214,7 @@ def generate_story(user_prompt, min_words, max_words, source_title):
                     'num_chunks': 1,
                     'chunk_size': final_word_count,
                     'final_word_count': final_word_count,
-                    'min_words_requested': min_words,
+                    'min_words_requested': min_words, 
                     'max_words_requested': max_words,
                     'attempts': 1
                 }
