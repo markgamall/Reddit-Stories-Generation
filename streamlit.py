@@ -42,6 +42,8 @@ import re
 import warnings
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 import atexit
+from video_generator import VideoGenerator, ImageGenerator
+from video_prompt_generator import generate_video_prompts
 
 
 # Load environment variables
@@ -209,49 +211,78 @@ def count_words_and_chars(text):
 def generate_speech(text):
     """Generate narration audio with a specific voice style using OpenAI's TTS API"""
     try:
-        client = openai.OpenAI(api_key=os.environ['OPENAI_API_KEY'])
+        # Split text into chunks
+        chunks = split_text_for_tts(text)
+        audio_files = []
         
-        # Using OpenAI's Chat Completions API to generate audio with specific voice characteristics
-        completion = client.chat.completions.create(
-            model="gpt-4o-audio-preview",
-            modalities=["text", "audio"],  # Output types that you want the model to generate
-            audio={"voice": "alloy", "format": "mp3"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": """
-                    You are a helpful assistant that converts text into realistic audio speech.
+        # Generate audio for each chunk
+        for i, chunk in enumerate(chunks):
+            with st.spinner(f"Generating audio part {i+1}/{len(chunks)}..."):
+                try:
+                    client = openai.OpenAI(api_key=os.environ['OPENAI_API_KEY'])
                     
-                    **Do not alter the text in any way. Read it as it is.**
+                    # Using OpenAI's Chat Completions API to generate audio with specific voice characteristics
+                    completion = client.chat.completions.create(
+                        model="gpt-4o-audio-preview",
+                        modalities=["text", "audio"],  # Output types that you want the model to generate
+                        audio={"voice": "alloy", "format": "mp3"},
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": """
+                                You are a helpful assistant that converts text into realistic audio speech.
+                                
+                                **Do not alter the text in any way. Read it as it is.**
 
-                    For the audio, speak in a dramatic voice like a professional audiobook narrator. Emphasis on key moments.
-                    Use natural inflections and an engaging storytelling style.
-                    Speak clearly but with emotional expressiveness appropriate to the story content.
-                    Vary your pacing for dramatic effect, slowing down at tense moments and speeding up during action.
+                                For the audio, speak in a dramatic voice like a professional audiobook narrator. Emphasis on key moments.
+                                Use natural inflections and an engaging storytelling style.
+                                Speak clearly but with emotional expressiveness appropriate to the story content.
+                                Vary your pacing for dramatic effect, slowing down at tense moments and speeding up during action.
+                                
+                                **Do not alter the text in any way. Read it as it is.**
+                                """
+                            },
+                            {
+                                "role": "user",
+                                "content": chunk,
+                            }
+                        ],
+                    )
                     
-                    **Do not alter the text in any way. Read it as it is.**
-                    """
-                },
-                {
-                    "role": "user",
-                    "content": text,
-                }
-            ],
-        )
+                    # Extract the audio data
+                    audio_data = base64.b64decode(completion.choices[0].message.audio.data)
+                    
+                    # Save the audio to a temporary file
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
+                        temp_file.write(audio_data)
+                        audio_files.append(temp_file.name)
+                        
+                except Exception as e:
+                    st.error(f"Error generating audio for chunk {i+1}: {str(e)}")
+                    # Clean up any generated audio files
+                    for file in audio_files:
+                        try:
+                            os.unlink(file)
+                        except:
+                            pass
+                    raise
         
-        # Extract the audio data
-        audio_data = base64.b64decode(completion.choices[0].message.audio.data)
-        
-        # Save the audio to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
-            temp_file.write(audio_data)
-            temp_path = temp_file.name
-        
-        return temp_path
-    except Exception as e: 
-        st.error(f"Error generating speech: {str(e)}")
+        # Concatenate all audio files
+        if len(audio_files) > 1:
+            final_audio_path = concatenate_audio_files(audio_files)
+            # Clean up individual audio files
+            for file in audio_files:
+                try:
+                    os.unlink(file)
+                except:
+                    pass
+            return final_audio_path
+        else:
+            return audio_files[0]
+            
+    except Exception as e:
+        st.error(f"Error in speech generation: {str(e)}")
         log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
-
         return None
 
 OPENAI_VOICES = {
@@ -281,6 +312,106 @@ def generate_speech_default(text, voice="nova"):
         return temp_path
     except Exception as e:
         st.error(f"Error generating speech: {str(e)}")
+        log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
+        return None
+
+def split_text_for_tts(text, max_chars=4000):
+    """Split text into chunks that fit within TTS character limit"""
+    # Split by sentences to avoid cutting mid-sentence
+    sentences = text.split('. ')
+    chunks = []
+    current_chunk = []
+    current_length = 0
+    
+    for sentence in sentences:
+        sentence_length = len(sentence)
+        if current_length + sentence_length > max_chars:
+            if current_chunk:
+                chunks.append('. '.join(current_chunk) + '.')
+            current_chunk = [sentence]
+            current_length = sentence_length
+        else:
+            current_chunk.append(sentence)
+            current_length += sentence_length
+    
+    if current_chunk:
+        chunks.append('. '.join(current_chunk) + '.')
+    
+    return chunks
+
+def concatenate_audio_files(audio_files):
+    """Concatenate multiple audio files into one"""
+    try:
+        # Create a temporary file for the concatenated audio
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
+            output_path = temp_file.name
+        
+        # Create a temporary file with the list of audio files
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode='w') as list_file:
+            for audio_file in audio_files:
+                list_file.write(f"file '{audio_file}'\n")
+            list_path = list_file.name
+        
+        # Use ffmpeg to concatenate the audio files with -y flag to overwrite without asking
+        subprocess.run([
+            'ffmpeg', '-y',  # Add -y flag to overwrite without asking
+            '-f', 'concat', 
+            '-safe', '0',
+            '-i', list_path,
+            '-c', 'copy',
+            output_path
+        ], check=True)
+        
+        # Clean up the temporary list file
+        os.unlink(list_path)
+        
+        return output_path
+    except Exception as e:
+        st.error(f"Error concatenating audio files: {str(e)}")
+        log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
+        return None
+
+def generate_speech_for_long_text(text, voice="nova"):
+    """Generate speech for long text by splitting into chunks and concatenating"""
+    try:
+        # Split text into chunks
+        chunks = split_text_for_tts(text)
+        audio_files = []
+        
+        # Generate audio for each chunk
+        for i, chunk in enumerate(chunks):
+            with st.spinner(f"Generating audio part {i+1}/{len(chunks)}..."):
+                try:
+                    audio_path = generate_speech_default(chunk, voice=voice)
+                    if audio_path:
+                        audio_files.append(audio_path)
+                    else:
+                        raise Exception(f"Failed to generate audio for chunk {i+1}")
+                except Exception as e:
+                    st.error(f"Error generating audio for chunk {i+1}: {str(e)}")
+                    # Clean up any generated audio files
+                    for file in audio_files:
+                        try:
+                            os.unlink(file)
+                        except:
+                            pass
+                    raise
+        
+        # Concatenate all audio files
+        if len(audio_files) > 1:
+            final_audio_path = concatenate_audio_files(audio_files)
+            # Clean up individual audio files
+            for file in audio_files:
+                try:
+                    os.unlink(file)
+                except:
+                    pass
+            return final_audio_path
+        else:
+            return audio_files[0]
+            
+    except Exception as e:
+        st.error(f"Error in speech generation: {str(e)}")
         log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
         return None
 
@@ -772,8 +903,8 @@ else:  # Story Generation
     st.title("Story Generation")
     
     # Create tabs for Story Generation page
-    tab1, tab2, tab3 = st.tabs([
-        "Generate Story", "Prompt Templates", "View Generated Stories"
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Generate Story", "Prompt Templates", "View Generated Stories", "Video and Image Generation"
     ])
     
     # Tab 1: Generate Story
@@ -900,11 +1031,11 @@ else:  # Story Generation
                     with st.spinner("Generating audio narration..."):
                         try:
                             if OPENAI_VOICES[selected_voice] == "custom":
-                                # Use your custom audiobook narration style
+                                # Use your custom audiobook narration style with chunking
                                 audio_path = generate_speech(st.session_state.generated_story_text)
                             else:
                                 # Use the standard OpenAI TTS with selected voice
-                                audio_path = generate_speech_default(
+                                audio_path = generate_speech_for_long_text(
                                     st.session_state.generated_story_text,
                                     voice=OPENAI_VOICES[selected_voice]
                                 )
@@ -1094,17 +1225,195 @@ else:  # Story Generation
                     # Count words and characters
                     counts = count_words_and_chars(story['story'])
                     st.markdown(f"**Word Count:** {counts['word_count']}")
-                    #st.markdown(f"**Character Count (including spaces):** {counts['char_count']}")
                     st.markdown(f"**Character Count (excluding spaces):** {counts['char_count_no_spaces']}")
                     
-                    # Download button for each story
-                    st.download_button(
-                        label="Download This Story",
-                        data=story['story'],
-                        file_name=f"generated_story_{story['_id']}.txt",
-                        mime="text/plain",
-                        key=f"download_{story['_id']}"
-                    )
+                    # Create columns for buttons
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Download button for each story
+                        st.download_button(
+                            label="Download This Story",
+                            data=story['story'],
+                            file_name=f"generated_story_{story['_id']}.txt",
+                            mime="text/plain",
+                            key=f"download_{story['_id']}"
+                        )
+                    
+                    with col2:
+                        # Button to select story for video generation
+                        if st.button(f"Use for Video Generation", key=f"video_{story['_id']}"):
+                            # Store the selected story in session state
+                            st.session_state.selected_story_for_video = story
+                            st.session_state.page = "Story Generation"
+                            st.session_state.active_tab = "Video and Image Generation"
+                            st.success(f"Selected '{story_title}' for video generation. Switching to Video and Image Generation tab...")
+                            st.rerun()
         else:
             st.info("No generated stories available. Use the 'Generate Story' tab to create stories based on Reddit posts or YouTube transcriptions.")
+
+    # Tab 4: Video and Image Generation
+    with tab4:
+        st.header("Video and Image Generation")
+        
+        # Check if a story has been selected from the View Generated Stories tab
+        if 'selected_story_for_video' not in st.session_state:
+            st.info("Please select a story from the 'View Generated Stories' tab first.")
+            st.markdown("""
+            To generate videos and images:
+            1. Go to the 'View Generated Stories' tab
+            2. Find the story you want to use
+            3. Click the 'Use for Video Generation' button
+            """)
+        else:
+            story_data = st.session_state.selected_story_for_video
+            
+            # Display the selected story
+            st.subheader("Selected Story")
+            with st.expander("View Story Content"):
+                st.markdown(story_data['story'])
+            
+            # Add generation options
+            st.subheader("Generation Options")
+            
+            # Model selection
+            model = st.selectbox(
+                "Select Video Generation Model",
+                options=["T2V-01"],
+                help="Currently only T2V-01 is supported"
+            )
+            
+            # Image generation options
+            st.subheader("Image Generation Options")
+            aspect_ratio = st.selectbox(
+                "Image Aspect Ratio",
+                options=["16:9", "4:3", "1:1"],
+                help="Select the aspect ratio for generated images"
+            )
+            
+            # Initialize session state for generated content if not exists
+            if 'generated_content' not in st.session_state:
+                st.session_state.generated_content = {
+                    'video_paths': None,
+                    'image_paths': [],
+                    'prompts': None
+                }
+            
+            # Single button to generate both video and images
+            if st.button("Generate Video and Images"):
+                with st.spinner("Generating content from your story... This may take a few minutes."):
+                    try:
+                        # Generate prompts in the background
+                        prompts_result = generate_video_prompts(
+                            story_data['story'],
+                            story_data['_id']
+                        )
+                        
+                        # Create output directories
+                        output_dir = "generated_content"
+                        os.makedirs(output_dir, exist_ok=True)
+                        
+                        # Calculate number of video prompts based on story length
+                        word_count = len(story_data['story'].split())
+                        if 50 <= word_count <= 250:  # Very short stories
+                            num_video_prompts = 1
+                        elif 250 < word_count <= 1000:  # Short stories
+                            num_video_prompts = 2
+                        elif 1000 < word_count <= 2500:  # Medium stories
+                            num_video_prompts = 3
+                        else:  # Long stories (2500+ words)
+                            num_video_prompts = 3
+                        
+                        # Generate videos from first N prompts
+                        st.subheader("Generated Videos")
+                        video_gen = VideoGenerator()
+                        video_paths = []
+                        
+                        for i in range(num_video_prompts):
+                            video_filename = f"{output_dir}/generated_video_{story_data['_id']}_{i+1}.mp4"
+                            st.info(f"Generating video {i+1} from prompt {i+1}...")
+                            output_path = video_gen.generate_video(
+                                prompt=prompts_result['prompts'][i],
+                                output_file_name=video_filename,
+                                model=model
+                            )
+                            video_paths.append(output_path)
+                        
+                        # Generate images from remaining prompts
+                        st.subheader("Generated Images")
+                        image_gen = ImageGenerator()
+                        
+                        st.info(f"Generating images from {len(prompts_result['prompts'][num_video_prompts:])} prompts...")
+                        image_paths = image_gen.generate_images(
+                            prompts=prompts_result['prompts'][num_video_prompts:],
+                            output_dir=output_dir,
+                            aspect_ratio=aspect_ratio,
+                            n=1  # Always generate one image per prompt
+                        )
+                        
+                        # Store generated content in session state
+                        st.session_state.generated_content = {
+                            'video_paths': video_paths,
+                            'image_paths': image_paths,
+                            'prompts': prompts_result['prompts']
+                        }
+                        
+                        st.success("All content generated successfully!")
+                        
+                    except Exception as e:
+                        st.error(f"Error generating content: {str(e)}")
+                        log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
+            
+            # Display generated content if available
+            if st.session_state.generated_content.get('video_paths'):
+                st.subheader("Generated Content")
+                
+                # Display videos
+                for i, video_path in enumerate(st.session_state.generated_content['video_paths']):
+                    st.video(video_path, caption=f"Generated Video {i+1}")
+                
+                # Display images
+                for i, image_path in enumerate(st.session_state.generated_content['image_paths']):
+                    st.image(image_path, caption=f"Generated Image {i+1}")
+                
+                # Display prompts used
+                with st.expander("View Used Prompts"):
+                    st.markdown("**Video Generation Prompts:**")
+                    for i, prompt in enumerate(st.session_state.generated_content['prompts'][:len(st.session_state.generated_content['video_paths'])]):
+                        st.markdown(f"**Video {i+1}:**")
+                        st.code(prompt)
+                    st.markdown("**Image Generation Prompts:**")
+                    for i, prompt in enumerate(st.session_state.generated_content['prompts'][len(st.session_state.generated_content['video_paths']):], 1):
+                        st.markdown(f"**Image {i}:**")
+                        st.code(prompt)
+                
+                # Create columns for download buttons
+                st.subheader("Download Content")
+                
+                # Video downloads
+                col1, col2 = st.columns(2)
+                with col1:
+                    for i, video_path in enumerate(st.session_state.generated_content['video_paths']):
+                        with open(video_path, "rb") as file:
+                            video_bytes = file.read()
+                            st.download_button(
+                                label=f"Download Video {i+1}",
+                                data=video_bytes,
+                                file_name=os.path.basename(video_path),
+                                mime="video/mp4",
+                                key=f"download_video_{i}"
+                            )
+                
+                # Image downloads
+                with col2:
+                    for i, image_path in enumerate(st.session_state.generated_content['image_paths']):
+                        with open(image_path, "rb") as file:
+                            image_bytes = file.read()
+                            st.download_button(
+                                label=f"Download Image {i+1}",
+                                data=image_bytes,
+                                file_name=os.path.basename(image_path),
+                                mime="image/png",
+                                key=f"download_image_{i}"
+                            )
 
