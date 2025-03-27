@@ -1370,7 +1370,8 @@ else:  # Story Generation
                 
                 # Display videos
                 for i, video_path in enumerate(st.session_state.generated_content['video_paths']):
-                    st.video(video_path, caption=f"Generated Video {i+1}")
+                    st.markdown(f"**Generated Video {i+1}**")
+                    st.video(video_path)
                 
                 # Display images
                 for i, image_path in enumerate(st.session_state.generated_content['image_paths']):
