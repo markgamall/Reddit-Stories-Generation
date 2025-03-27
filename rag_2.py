@@ -177,7 +177,14 @@ def generate_story(user_prompt, min_words, max_words, source_title):
                 "system_message": system_message
             })
             
+            # Validate response
+            if not response or 'answer' not in response:
+                raise Exception("Failed to generate story: No response received from the model")
+            
             final_story = response['answer']
+            if not final_story or not isinstance(final_story, str):
+                raise Exception("Failed to generate story: Invalid response format")
+            
             final_word_count = len(final_story.split())
             
             # Log the result
@@ -289,7 +296,14 @@ def generate_story(user_prompt, min_words, max_words, source_title):
                             "system_message": system_message
                         })
                         
+                        # Validate response
+                        if not response or 'answer' not in response:
+                            raise Exception(f"Failed to generate chunk {i+1}: No response received from the model")
+                        
                         chunk_content = response['answer']
+                        if not chunk_content or not isinstance(chunk_content, str):
+                            raise Exception(f"Failed to generate chunk {i+1}: Invalid response format")
+                        
                         all_story_parts.append(chunk_content)
                         
                         # Update context for next chunk
