@@ -1024,6 +1024,30 @@ else:  # Story Generation
                     index=4,  # Default to Nova
                     key="voice_selection",
                 )
+                
+                # Add voice preview section
+                st.subheader("Voice Preview")
+                
+                # Define paths to existing preview files
+                preview_files = {
+                    "alloy": "voice_previews/alloy.mp3",
+                    "echo": "voice_previews/echo.mp3",
+                    "fable": "voice_previews/fable.mp3",
+                    "onyx": "voice_previews/onyx.mp3",
+                    "nova": "voice_previews/nova.mp3",
+                    "shimmer": "voice_previews/shimmer.mp3",
+                    "custom": "voice_previews/custom_audiobook.mp3"
+                }
+                
+                # Get the preview file path for the selected voice
+                preview_file = preview_files.get(OPENAI_VOICES[selected_voice])
+                
+                # Check if preview file exists
+                if preview_file and os.path.exists(preview_file):
+                    st.audio(preview_file)
+                else:
+                    st.info("Preview not available for this voice")
+                
                 st.markdown(f"<p style='font-size:14px;'>Voice Options:<br>Alloy, Echo, Fable, Onyx, Nova, Shimmer: Standard OpenAI TTS voices<br>Custom Audiobook Narration: Professional narrator style with dramatic pacing and emphasis</p>", unsafe_allow_html=True)
 
                 # Check if audio was already generated

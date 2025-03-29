@@ -11,6 +11,9 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from datetime import datetime
 import uuid
+import json
+import re
+from collections import defaultdict
 
 # Load environment variables
 load_dotenv()
@@ -27,8 +30,8 @@ embeddings = HuggingFaceEmbeddings()
 # Initialize LLM and chains
 llm = ChatOpenAI(
     api_key=os.environ['OPENAI_API_KEY'],
-    model_name="gpt-4o",  # Using the latest GPT-4 model with largest context window
-    temperature=0,  # Keeping low temperature for consistent output
+    model_name="gpt-4-1106-preview",  # Using GPT-4 Turbo for better reasoning
+    temperature=0.3,  # Slightly increased for better creativity in name changes
     request_timeout=120  # Increased timeout for longer generations
 )
 
@@ -46,7 +49,16 @@ You are a captivating digital storyteller creating binge-worthy content for YouT
    - If the story is too long, remove unnecessary details
    - The final word count MUST be between {min_words} and {max_words} words
 
-2. NEVER include any of the following:
+2. CHARACTER NAME MODIFICATION:
+   - ALL character names MUST be changed from the original story, including:
+     * Main characters
+     * Supporting characters
+     * Minor characters
+     * Any mentioned names in dialogue or descriptions
+   - Ensure name changes are consistent throughout the story
+   - Double-check that no original names remain in the text
+
+3. NEVER include any of the following:
    - Scene directions like "(cut to flashback)" or "(fade to black)"
    - Production notes like "(tense music plays)" or "(camera zooms in)"
    - Parenthetical asides like "(pause)" or "(whispers)"
@@ -80,10 +92,18 @@ You are a captivating digital storyteller creating binge-worthy content for YouT
    - Use conflict to reveal character depth and drive plot forward
 
 4. **Character & Plot Modification**:
+   - ALWAYS change ALL character names from the original story, including:
+     * Main characters
+     * Supporting characters
+     * Minor characters
+     * Any mentioned names in dialogue or descriptions
+   - Create unique, memorable names that fit the story's tone
+   - Never use the original character names from the source material
+   - Ensure name changes are consistent throughout the story
+   - Double-check that no original names remain in the text
    - Freely change the number of characters to create relationship dynamics
    - Add or modify subplots that increase tension and stakes
    - Create secondary characters who challenge or complicate the protagonist's journey
-   - Develop backstories that explain character motivations and conflicts
    - Transform simple Reddit scenarios into complex narratives with interconnected plot points
 
 5. **Emotional Impact**:
@@ -113,6 +133,14 @@ HOST: 'You ever been alone in a place that's supposed to be bustling with life? 
 - If the story is too short, add more details and descriptions
 - If the story is too long, remove unnecessary details
 - The final word count MUST be between {min_words} and {max_words} words
+- ALWAYS change ALL character names from the original story, including:
+  * Main characters
+  * Supporting characters
+  * Minor characters
+  * Any mentioned names in dialogue or descriptions
+- Never use the original character names from the source material
+- Ensure name changes are consistent throughout the story
+- Double-check that no original names remain in the text
 
 Now, transform the Reddit story into a can't-look-away narrative that would thrive in today's attention economy. Make viewers feel something powerful enough that they'll want to share and discuss.
 """
@@ -130,6 +158,74 @@ prompt = ChatPromptTemplate.from_template(
     """
 )
 
+def extract_character_names(text):
+    """Extract potential character names from the text using common patterns."""
+    # Common name patterns (first name + last name)
+    name_pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b'
+    
+    # Find all potential names
+    names = re.findall(name_pattern, text)
+    
+    # Count occurrences of each name
+    name_counts = defaultdict(int)
+    for name in names:
+        name_counts[name] += 1
+    
+    # Filter out names that appear only once (likely not characters)
+    character_names = {name: count for name, count in name_counts.items() if count > 1}
+    
+    return character_names
+
+def generate_character_mapping(character_names, llm):
+    """Generate a mapping of original names to new names using the LLM."""
+    if not character_names:
+        return {}
+    
+    # Create a prompt for name mapping
+    mapping_prompt = f"""Create unique, memorable names for each character in the story. 
+    Original names: {', '.join(character_names.keys())}
+    
+    For each name, provide a new name that:
+    1. Is unique and memorable
+    2. Fits the story's tone
+    3. Is appropriate for the character's role
+    
+    Format your response as a JSON object where:
+    - Keys are the original names
+    - Values are the new names
+    
+    Example format:
+    {{
+        "John Smith": "Marcus Thompson",
+        "Sarah Johnson": "Elena Rodriguez"
+    }}
+    
+    Provide ONLY the JSON object, no other text."""
+    
+    try:
+        # Get the mapping from the LLM
+        response = llm.invoke(mapping_prompt)
+        mapping = json.loads(response.content)
+        return mapping
+    except Exception as e:
+        print(f"Error generating name mapping: {e}")
+        return {}
+
+def replace_names_in_text(text, name_mapping):
+    """Replace all occurrences of original names with new names in the text."""
+    if not name_mapping:
+        return text
+    
+    # Sort names by length (longest first) to avoid partial matches
+    sorted_names = sorted(name_mapping.keys(), key=len, reverse=True)
+    
+    for old_name in sorted_names:
+        new_name = name_mapping[old_name]
+        # Use word boundaries to avoid partial matches
+        text = re.sub(r'\b' + re.escape(old_name) + r'\b', new_name, text)
+    
+    return text
+
 # Function to generate a story
 def generate_story(user_prompt, min_words, max_words, source_title):
     # Load from the text file
@@ -139,6 +235,31 @@ def generate_story(user_prompt, min_words, max_words, source_title):
     
     with open(file_path, "r", encoding="utf-8") as file:
         content = file.read()
+
+    # Extract character names from source content
+    character_names = extract_character_names(content)
+    
+    # Generate name mapping
+    name_mapping = generate_character_mapping(character_names, llm)
+    
+    # Create a copy of the system message template for this story
+    story_system_message = system_message_template
+    
+    # Add name mapping to the prompt
+    if name_mapping:
+        mapping_text = "\n".join([f"{old} → {new}" for old, new in name_mapping.items()])
+        # Add name mapping to the system message template
+        story_system_message = story_system_message.replace(
+            "**Core Rules**",
+            f"""**Core Rules**
+
+IMPORTANT - CHARACTER NAMES:
+The following name replacements MUST be used consistently throughout the entire story:
+{mapping_text}
+
+1. **STRICT WORD COUNT REQUIREMENT**:"""
+        )
+        user_prompt = f"{user_prompt}\n\nIMPORTANT: Use these exact name replacements throughout the story:\n{mapping_text}\n\nEnsure you use these exact new names consistently."
 
     # Split the content into chunks
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
@@ -164,7 +285,7 @@ def generate_story(user_prompt, min_words, max_words, source_title):
             print(f"Generating short story with min_words: {min_words}, max_words: {max_words}")
             
             # Generate the story in one go
-            system_message = system_message_template.format(
+            system_message = story_system_message.format(
                 min_words=min_words,
                 max_words=max_words
             )
@@ -268,35 +389,47 @@ def generate_story(user_prompt, min_words, max_words, source_title):
                         chunk_min_words = max(min_chunk_words, chunk_size - 50)
                         chunk_max_words = min(max_chunk_words, chunk_size + 50)
                         
-                        system_message = system_message_template.format(
+                        system_message = story_system_message.format(
                             min_words=chunk_min_words,
                             max_words=chunk_max_words
                         )
                         
-                        # Add context from previous chunks if not the first chunk
-                        if i > 0:
-                            # For larger stories, use more context from previous chunks
-                            context_chunks = min(3, i)  # Use up to 3 previous chunks for context
-                            context_parts = all_story_parts[-context_chunks:]
+                        # Create a specific prompt for each chunk that builds the story
+                        if i == 0:
+                            # First chunk: Set up the story and introduce characters
+                            chunk_prompt = f"{user_prompt}\n\nWrite the beginning of the story. Introduce the main characters and set up the initial situation. This should be the first {chunk_size} words of the story."
+                        elif i == num_chunks - 1:
+                            # Last chunk: Resolve the story
+                            context_parts = all_story_parts[-2:]  # Use last 2 chunks for context
                             current_context = " ".join(context_parts)
-                            user_prompt_with_context = f"{user_prompt}\n\nPrevious story context: {current_context}"
+                            chunk_prompt = f"{user_prompt}\n\nPrevious story context: {current_context}\n\nWrite the final part of the story. Resolve the main conflicts and provide a satisfying conclusion. This should be the last {chunk_size} words of the story."
                         else:
-                            user_prompt_with_context = user_prompt
+                            # Middle chunks: Develop the story
+                            context_parts = all_story_parts[-2:]  # Use last 2 chunks for context
+                            current_context = " ".join(context_parts)
+                            chunk_prompt = f"{user_prompt}\n\nPrevious story context: {current_context}\n\nContinue the story from where it left off. Develop the plot, add complications, and build tension. This should be the next {chunk_size} words of the story."
                         
                         # Generate this chunk
                         response = retrieval_chain.invoke({
-                            "input": user_prompt_with_context,
+                            "input": chunk_prompt,
                             "system_message": system_message
                         })
                         
                         chunk_content = response['answer']
+                        # Replace any remaining original names with mapped names
+                        chunk_content = replace_names_in_text(chunk_content, name_mapping)
                         all_story_parts.append(chunk_content)
-                        
-                        # Update context for next chunk
-                        current_context = " ".join(all_story_parts[-2:])  # Use last 2 chunks as context
                     
                     # Combine all chunks into final story
                     final_story = " ".join(all_story_parts)
+                    # Final check to replace any remaining original names
+                    final_story = replace_names_in_text(final_story, name_mapping)
+                    
+                    # Additional check for name consistency
+                    for old_name, new_name in name_mapping.items():
+                        if old_name in final_story:
+                            print(f"Warning: Original name '{old_name}' still found in final story. Replacing with '{new_name}'.")
+                            final_story = replace_names_in_text(final_story, {old_name: new_name})
                     
                     # Validate final word count
                     final_word_count = len(final_story.split())
