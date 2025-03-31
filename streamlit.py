@@ -1,5 +1,6 @@
 import streamlit as st
 import subprocess
+import time
 
 try:
     subprocess.run(["ffmpeg", "-version"], check=True)
@@ -1299,13 +1300,34 @@ else:  # Story Generation
                             st.session_state.page = "Story Generation"
                             st.session_state.active_tab = "Video and Image Generation"
                             st.success(f"Selected '{story_title}' for video generation. Switching to Video and Image Generation tab...")
-                            st.rerun()
+                            st.experimental_rerun()  # Use experimental_rerun instead
         else:
             st.info("No generated stories available. Use the 'Generate Story' tab to create stories based on Reddit posts or YouTube transcriptions.")
 
     # Tab 4: Video and Image Generation
     with tab4:
         st.header("Video and Image Generation")
+        
+        # Initialize cleanup function
+        def cleanup_old_content():
+            """Clean up old generated content files"""
+            try:
+                output_dir = "generated_content"
+                if os.path.exists(output_dir):
+                    # Get all files in the directory
+                    for filename in os.listdir(output_dir):
+                        file_path = os.path.join(output_dir, filename)
+                        try:
+                            # Delete files older than 24 hours
+                            if os.path.getmtime(file_path) < time.time() - 86400:
+                                os.remove(file_path)
+                        except Exception as e:
+                            print(f"Error deleting {file_path}: {e}")
+            except Exception as e:
+                print(f"Error in cleanup: {e}")
+
+        # Run cleanup at the start of the tab
+        cleanup_old_content()
         
         # Check if a story has been selected from the View Generated Stories tab
         if 'selected_story_for_video' not in st.session_state:
@@ -1366,8 +1388,8 @@ else:  # Story Generation
                         except Exception as e:
                             st.error(f"Error creating output directory: {str(e)}")
                             log_error_to_db(str(e), "Directory Creation Error", traceback.format_exc())
-                            st.stop()  # Use st.stop() instead of return to stop execution
-                        
+                            st.stop()
+
                         # Generate prompts in the background
                         prompts_result = generate_video_prompts(
                             story_data['story'],
