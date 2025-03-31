@@ -1300,7 +1300,6 @@ else:  # Story Generation
                             st.session_state.page = "Story Generation"
                             st.session_state.active_tab = "Video and Image Generation"
                             st.success(f"Selected '{story_title}' for video generation. Switching to Video and Image Generation tab...")
-                            st.experimental_rerun()  # Use experimental_rerun instead
         else:
             st.info("No generated stories available. Use the 'Generate Story' tab to create stories based on Reddit posts or YouTube transcriptions.")
 
@@ -1461,34 +1460,35 @@ else:  # Story Generation
                             st.session_state.generated_content = {
                                 'video_paths': video_paths,
                                 'image_paths': image_paths,
-                                'prompts': prompts_result['prompts']
+                                'prompts': prompts_result['prompts'],
+                                'story_id': story_data['_id']  # Add story ID to track which story generated this content
                             }
                             st.success("Content generated successfully!")
                         else:
                             st.error("No content was generated successfully. Please check the errors above.")
-                        
-                    except Exception as e:
-                        st.error(f"Error generating content: {str(e)}")
-                        log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
             
             # Display generated content if available
-            if st.session_state.generated_content.get('video_paths'):
+            if 'generated_content' in st.session_state and st.session_state.generated_content:
                 st.subheader("Generated Content")
                 
-                # Display videos with error checking
-                for i, video_path in enumerate(st.session_state.generated_content['video_paths']):
-                    if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
-                        st.markdown(f"**Generated Video {i+1}**")
-                        st.video(video_path)
-                    else:
-                        st.error(f"Video {i+1} is not available for display")
-                
-                # Display images with error checking
-                for i, image_path in enumerate(st.session_state.generated_content['image_paths']):
-                    if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
-                        st.image(image_path, caption=f"Generated Image {i+1}")
-                    else:
-                        st.error(f"Image {i+1} is not available for display")
+                # Verify the content belongs to the current story
+                if st.session_state.generated_content.get('story_id') == story_data['_id']:
+                    # Display videos with error checking
+                    if st.session_state.generated_content.get('video_paths'):
+                        for i, video_path in enumerate(st.session_state.generated_content['video_paths']):
+                            if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+                                st.markdown(f"**Generated Video {i+1}**")
+                                st.video(video_path)
+                            else:
+                                st.error(f"Video {i+1} is not available for display")
+                    
+                    # Display images with error checking
+                    if st.session_state.generated_content.get('image_paths'):
+                        for i, image_path in enumerate(st.session_state.generated_content['image_paths']):
+                            if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
+                                st.image(image_path, caption=f"Generated Image {i+1}")
+                            else:
+                                st.error(f"Image {i+1} is not available for display")
                 
                 # Display prompts used
                 with st.expander("View Used Prompts"):
