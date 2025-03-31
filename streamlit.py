@@ -1028,24 +1028,22 @@ else:  # Story Generation
                 if edited_story != st.session_state.generated_story_text:
                     st.session_state.generated_story_text = edited_story
                     st.session_state.generated_audio_path = None  # Reset audio since the text changed
-                    
-                    # Add save button when edits are made
-                    if st.button("Save Story Changes", key="save_story_changes"):
-                        try:
-                            # Update the story in MongoDB
-                            generated_stories_collection.update_one(
-                                {'story': st.session_state.generation_result['answer']},  # Find the original story
-                                {'$set': {
-                                    'story': edited_story,
-                                    'timestamp': datetime.now()  # Update timestamp
-                                }}
-                            )
-                            st.success("Story changes saved successfully!")
-                        except Exception as e:
-                            st.error(f"Error saving story changes: {str(e)}")
-                            log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
-                    else:
-                        st.info("Click 'Save Story Changes' to update the story with your edits.")
+
+                # Always show save button
+                if st.button("Save Story Changes", key="save_story_changes"):
+                    try:
+                        # Update the story in MongoDB
+                        generated_stories_collection.update_one(
+                            {'story': st.session_state.generation_result['answer']},  # Find the original story
+                            {'$set': {
+                                'story': edited_story,
+                                'timestamp': datetime.now()  # Update timestamp
+                            }}
+                        )
+                        st.success("Story changes saved successfully!")
+                    except Exception as e:
+                        st.error(f"Error saving story changes: {str(e)}")
+                        log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
 
                 # Add voice selection dropdown
                 selected_voice = st.selectbox(
