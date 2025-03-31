@@ -1466,6 +1466,9 @@ else:  # Story Generation
                             st.success("Content generated successfully!")
                         else:
                             st.error("No content was generated successfully. Please check the errors above.")
+                    except Exception as e:
+                        st.error(f"Error generating content: {str(e)}")
+                        log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
             
             # Display generated content if available
             if 'generated_content' in st.session_state and st.session_state.generated_content:
