@@ -37,16 +37,16 @@ def calculate_number_of_prompts(story, max_prompts=15):
     word_count = len(story.split())
     
     # Calculate number of prompts based on story length ranges
-    if 50 <= word_count <= 250:  # Very short stories
-        num_prompts = 2  # 1-2 prompts
+    if word_count < 50:  # Extremely short stories
+        return 2  # 1 video, 1 image
+    elif 50 <= word_count <= 250:  # Very short stories
+        return 2  # 1 video, 1 image
     elif 250 < word_count <= 1000:  # Short stories
-        num_prompts = 4  # 2-4 prompts
+        return 4  # 2 videos, 1 image
     elif 1000 < word_count <= 2500:  # Medium stories
-        num_prompts = 10  # 5-10 prompts
+        return 8  # 3 videos, 5 images
     else:  # Long stories (2500+ words)
-        num_prompts = 15  # Maximum of 15 prompts
-    
-    return num_prompts
+        return 15  # 3 videos, 12 images
 
 def generate_video_prompts(story, unique_id):
     """

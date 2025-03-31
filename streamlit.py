@@ -219,42 +219,17 @@ def generate_speech(text):
         for i, chunk in enumerate(chunks):
             with st.spinner(f"Generating audio part {i+1}/{len(chunks)}..."):
                 try:
-                    client = openai.OpenAI(api_key=os.environ['OPENAI_API_KEY'])
-                    
-                    # Using OpenAI's Chat Completions API to generate audio with specific voice characteristics
-                    completion = client.chat.completions.create(
-                        model="gpt-4o-audio-preview",
-                        modalities=["text", "audio"],  # Output types that you want the model to generate
-                        audio={"voice": "alloy", "format": "mp3"},
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": """
-                                You are a helpful assistant that converts text into realistic audio speech.
-                                
-                                **Do not alter the text in any way. Read it as it is.**
-
-                                For the audio, speak in a dramatic voice like a professional audiobook narrator. Emphasis on key moments.
-                                Use natural inflections and an engaging storytelling style.
-                                Speak clearly but with emotional expressiveness appropriate to the story content.
-                                Vary your pacing for dramatic effect, slowing down at tense moments and speeding up during action.
-                                
-                                **Do not alter the text in any way. Read it as it is.**
-                                """
-                            },
-                            {
-                                "role": "user",
-                                "content": chunk,
-                            }
-                        ],
+                    # Using OpenAI's TTS API with the alloy voice for a dramatic narration style
+                    response = openai_client.audio.speech.create(
+                        model="tts-1",
+                        voice="alloy",
+                        input=chunk,
+                        response_format="mp3"
                     )
-                    
-                    # Extract the audio data
-                    audio_data = base64.b64decode(completion.choices[0].message.audio.data)
                     
                     # Save the audio to a temporary file
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
-                        temp_file.write(audio_data)
+                        temp_file.write(response.content)
                         audio_files.append(temp_file.name)
                         
                 except Exception as e:
@@ -298,44 +273,67 @@ OPENAI_VOICES = {
 def generate_speech_default(text, voice="nova"):
     """Generate speech using standard OpenAI TTS with selectable voice"""
     try:
-        response = openai_client.audio.speech.create(
-            model="tts-1",
-            voice=voice,
-            input=text
-        )
+        # Split text into chunks to handle long texts
+        chunks = split_text_for_tts(text)
+        audio_files = []
         
-        # Save the audio to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
-            temp_file.write(response.content)
-            temp_path = temp_file.name
+        # Generate audio for each chunk
+        for i, chunk in enumerate(chunks):
+            with st.spinner(f"Generating audio part {i+1}/{len(chunks)}..."):
+                try:
+                    response = openai_client.audio.speech.create(
+                        model="tts-1",
+                        voice=voice,
+                        input=chunk
+                    )
+                    
+                    # Save the audio to a temporary file
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
+                        temp_file.write(response.content)
+                        audio_files.append(temp_file.name)
+                    
+                except Exception as e:
+                    st.error(f"Error generating audio for chunk {i+1}: {str(e)}")
+                    # Clean up any generated audio files
+                    for file in audio_files:
+                        try:
+                            os.unlink(file)
+                        except:
+                            pass
+                    raise
         
-        return temp_path
+        # Concatenate all audio files if there are multiple chunks
+        if len(audio_files) > 1:
+            final_audio_path = concatenate_audio_files(audio_files)
+            # Clean up individual audio files
+            for file in audio_files:
+                try:
+                    os.unlink(file)
+                except:
+                    pass
+            return final_audio_path
+        else:
+            return audio_files[0]
+            
     except Exception as e:
         st.error(f"Error generating speech: {str(e)}")
         log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
         return None
 
 def split_text_for_tts(text, max_chars=4000):
-    """Split text into chunks that fit within TTS character limit"""
-    # Split by sentences to avoid cutting mid-sentence
-    sentences = text.split('. ')
+    """Split text into fixed-length chunks that fit within TTS character limit"""
+    # First, normalize whitespace
+    text = ' '.join(text.split())
+    
+    # OpenAI TTS has a limit of 4096 characters per request
+    # Using a smaller chunk size to be safe and ensure good quality
+    chunk_size = 3000  # Reduced from 5000 to 3000 for better compatibility
+    
+    # Split text into chunks
     chunks = []
-    current_chunk = []
-    current_length = 0
-    
-    for sentence in sentences:
-        sentence_length = len(sentence)
-        if current_length + sentence_length > max_chars:
-            if current_chunk:
-                chunks.append('. '.join(current_chunk) + '.')
-            current_chunk = [sentence]
-            current_length = sentence_length
-        else:
-            current_chunk.append(sentence)
-            current_length += sentence_length
-    
-    if current_chunk:
-        chunks.append('. '.join(current_chunk) + '.')
+    for i in range(0, len(text), chunk_size):  
+        chunk = text[i:i + chunk_size]
+        chunks.append(chunk)
     
     return chunks
 
@@ -1327,26 +1325,36 @@ else:  # Story Generation
             if st.button("Generate Video and Images"):
                 with st.spinner("Generating content from your story... This may take a few minutes."):
                     try:
+                        # Create output directories with error checking
+                        output_dir = "generated_content"
+                        try:
+                            os.makedirs(output_dir, exist_ok=True)
+                            # Test write permissions
+                            test_file = os.path.join(output_dir, "test.txt")
+                            with open(test_file, "w") as f:
+                                f.write("test")
+                            os.remove(test_file)
+                        except Exception as e:
+                            st.error(f"Error creating output directory: {str(e)}")
+                            log_error_to_db(str(e), "Directory Creation Error", traceback.format_exc())
+                            st.stop()  # Use st.stop() instead of return to stop execution
+                        
                         # Generate prompts in the background
                         prompts_result = generate_video_prompts(
                             story_data['story'],
                             story_data['_id']
                         )
                         
-                        # Create output directories
-                        output_dir = "generated_content"
-                        os.makedirs(output_dir, exist_ok=True)
-                        
                         # Calculate number of video prompts based on story length
                         word_count = len(story_data['story'].split())
                         if 50 <= word_count <= 250:  # Very short stories
-                            num_video_prompts = 1
+                            num_video_prompts = 1  # 1 video, 1 image
                         elif 250 < word_count <= 1000:  # Short stories
-                            num_video_prompts = 2
+                            num_video_prompts = 2  # 2 videos, 1 image
                         elif 1000 < word_count <= 2500:  # Medium stories
-                            num_video_prompts = 3
+                            num_video_prompts = 3  # 3 videos, 5 images
                         else:  # Long stories (2500+ words)
-                            num_video_prompts = 3
+                            num_video_prompts = 3  # 3 videos, 12 images
                         
                         # Generate videos from first N prompts
                         st.subheader("Generated Videos")
@@ -1356,33 +1364,57 @@ else:  # Story Generation
                         for i in range(num_video_prompts):
                             video_filename = f"{output_dir}/generated_video_{story_data['_id']}_{i+1}.mp4"
                             st.info(f"Generating video {i+1} from prompt {i+1}...")
-                            output_path = video_gen.generate_video(
-                                prompt=prompts_result['prompts'][i],
-                                output_file_name=video_filename,
-                                model=model
-                            )
-                            video_paths.append(output_path)
+                            try:
+                                output_path = video_gen.generate_video(
+                                    prompt=prompts_result['prompts'][i],
+                                    output_file_name=video_filename,
+                                    model=model
+                                )
+                                # Verify the video file exists and has content
+                                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                                    video_paths.append(output_path)
+                                    st.success(f"Video {i+1} generated successfully!")
+                                else:
+                                    st.error(f"Video {i+1} was not generated properly. File is missing or empty.")
+                            except Exception as e:
+                                st.error(f"Error generating video {i+1}: {str(e)}")
+                                log_error_to_db(str(e), "Video Generation Error", traceback.format_exc())
                         
                         # Generate images from remaining prompts
                         st.subheader("Generated Images")
                         image_gen = ImageGenerator()
                         
                         st.info(f"Generating images from {len(prompts_result['prompts'][num_video_prompts:])} prompts...")
-                        image_paths = image_gen.generate_images(
-                            prompts=prompts_result['prompts'][num_video_prompts:],
-                            output_dir=output_dir,
-                            aspect_ratio=aspect_ratio,
-                            n=1  # Always generate one image per prompt
-                        )
+                        try:
+                            image_paths = image_gen.generate_images(
+                                prompts=prompts_result['prompts'][num_video_prompts:],
+                                output_dir=output_dir,
+                                aspect_ratio=aspect_ratio,
+                                n=1  # Always generate one image per prompt
+                            )
+                            # Verify each image exists and has content
+                            valid_image_paths = []
+                            for img_path in image_paths:
+                                if os.path.exists(img_path) and os.path.getsize(img_path) > 0:
+                                    valid_image_paths.append(img_path)
+                                else:
+                                    st.error(f"Image was not generated properly: {img_path}")
+                            image_paths = valid_image_paths
+                        except Exception as e:
+                            st.error(f"Error generating images: {str(e)}")
+                            log_error_to_db(str(e), "Image Generation Error", traceback.format_exc())
+                            image_paths = []
                         
-                        # Store generated content in session state
-                        st.session_state.generated_content = {
-                            'video_paths': video_paths,
-                            'image_paths': image_paths,
-                            'prompts': prompts_result['prompts']
-                        }
-                        
-                        st.success("All content generated successfully!")
+                        # Store generated content in session state only if we have valid files
+                        if video_paths or image_paths:
+                            st.session_state.generated_content = {
+                                'video_paths': video_paths,
+                                'image_paths': image_paths,
+                                'prompts': prompts_result['prompts']
+                            }
+                            st.success("Content generated successfully!")
+                        else:
+                            st.error("No content was generated successfully. Please check the errors above.")
                         
                     except Exception as e:
                         st.error(f"Error generating content: {str(e)}")
@@ -1392,14 +1424,20 @@ else:  # Story Generation
             if st.session_state.generated_content.get('video_paths'):
                 st.subheader("Generated Content")
                 
-                # Display videos
+                # Display videos with error checking
                 for i, video_path in enumerate(st.session_state.generated_content['video_paths']):
-                    st.markdown(f"**Generated Video {i+1}**")
-                    st.video(video_path)
+                    if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+                        st.markdown(f"**Generated Video {i+1}**")
+                        st.video(video_path)
+                    else:
+                        st.error(f"Video {i+1} is not available for display")
                 
-                # Display images
+                # Display images with error checking
                 for i, image_path in enumerate(st.session_state.generated_content['image_paths']):
-                    st.image(image_path, caption=f"Generated Image {i+1}")
+                    if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
+                        st.image(image_path, caption=f"Generated Image {i+1}")
+                    else:
+                        st.error(f"Image {i+1} is not available for display")
                 
                 # Display prompts used
                 with st.expander("View Used Prompts"):
@@ -1412,33 +1450,45 @@ else:  # Story Generation
                         st.markdown(f"**Image {i}:**")
                         st.code(prompt)
                 
-                # Create columns for download buttons
+                # Create columns for download buttons with error checking
                 st.subheader("Download Content")
                 
                 # Video downloads
                 col1, col2 = st.columns(2)
                 with col1:
                     for i, video_path in enumerate(st.session_state.generated_content['video_paths']):
-                        with open(video_path, "rb") as file:
-                            video_bytes = file.read()
-                            st.download_button(
-                                label=f"Download Video {i+1}",
-                                data=video_bytes,
-                                file_name=os.path.basename(video_path),
-                                mime="video/mp4",
-                                key=f"download_video_{i}"
-                            )
+                        if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+                            try:
+                                with open(video_path, "rb") as file:
+                                    video_bytes = file.read()
+                                    st.download_button(
+                                        label=f"Download Video {i+1}",
+                                        data=video_bytes,
+                                        file_name=os.path.basename(video_path),
+                                        mime="video/mp4",
+                                        key=f"download_video_{i}"
+                                    )
+                            except Exception as e:
+                                st.error(f"Error preparing video {i+1} for download: {str(e)}")
+                        else:
+                            st.error(f"Video {i+1} is not available for download")
                 
                 # Image downloads
                 with col2:
                     for i, image_path in enumerate(st.session_state.generated_content['image_paths']):
-                        with open(image_path, "rb") as file:
-                            image_bytes = file.read()
-                            st.download_button(
-                                label=f"Download Image {i+1}",
-                                data=image_bytes,
-                                file_name=os.path.basename(image_path),
-                                mime="image/png",
-                                key=f"download_image_{i}"
-                            )
+                        if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
+                            try:
+                                with open(image_path, "rb") as file:
+                                    image_bytes = file.read()
+                                    st.download_button(
+                                        label=f"Download Image {i+1}",
+                                        data=image_bytes,
+                                        file_name=os.path.basename(image_path),
+                                        mime="image/png",
+                                        key=f"download_image_{i}"
+                                    )
+                            except Exception as e:
+                                st.error(f"Error preparing image {i+1} for download: {str(e)}")
+                        else:
+                            st.error(f"Image {i+1} is not available for download")
 
