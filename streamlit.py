@@ -217,7 +217,34 @@ def generate_speech(text):
         
         # Generate audio for each chunk
         for i, chunk in enumerate(chunks):
-            with st.spinner(f"Generating audio part {i+1}/{len(chunks)}..."):
+            # Show progress message only if there are multiple chunks
+            if len(chunks) > 1:
+                with st.spinner(f"Generating audio part {i+1}/{len(chunks)}..."):
+                    try:
+                        # Using OpenAI's TTS API with the alloy voice for a dramatic narration style
+                        response = openai_client.audio.speech.create(
+                            model="tts-1",
+                            voice="alloy",
+                            input=chunk,
+                            response_format="mp3"
+                        )
+                        
+                        # Save the audio to a temporary file
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
+                            temp_file.write(response.content)
+                            audio_files.append(temp_file.name)
+                            
+                    except Exception as e:
+                        st.error(f"Error generating audio for chunk {i+1}: {str(e)}")
+                        # Clean up any generated audio files
+                        for file in audio_files:
+                            try:
+                                os.unlink(file)
+                            except:
+                                pass
+                        raise
+            else:
+                # For single chunk, just process without showing progress
                 try:
                     # Using OpenAI's TTS API with the alloy voice for a dramatic narration style
                     response = openai_client.audio.speech.create(
@@ -233,7 +260,7 @@ def generate_speech(text):
                         audio_files.append(temp_file.name)
                         
                 except Exception as e:
-                    st.error(f"Error generating audio for chunk {i+1}: {str(e)}")
+                    st.error(f"Error generating audio: {str(e)}")
                     # Clean up any generated audio files
                     for file in audio_files:
                         try:
@@ -279,28 +306,27 @@ def generate_speech_default(text, voice="nova"):
         
         # Generate audio for each chunk
         for i, chunk in enumerate(chunks):
-            with st.spinner(f"Generating audio part {i+1}/{len(chunks)}..."):
-                try:
-                    response = openai_client.audio.speech.create(
-                        model="tts-1",
-                        voice=voice,
-                        input=chunk
-                    )
-                    
-                    # Save the audio to a temporary file
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
-                        temp_file.write(response.content)
-                        audio_files.append(temp_file.name)
-                    
-                except Exception as e:
-                    st.error(f"Error generating audio for chunk {i+1}: {str(e)}")
-                    # Clean up any generated audio files
-                    for file in audio_files:
-                        try:
-                            os.unlink(file)
-                        except:
-                            pass
-                    raise
+            try:
+                response = openai_client.audio.speech.create(
+                    model="tts-1",
+                    voice=voice,
+                    input=chunk
+                )
+                
+                # Save the audio to a temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
+                    temp_file.write(response.content)
+                    audio_files.append(temp_file.name)
+                
+            except Exception as e:
+                st.error(f"Error generating audio for chunk {i+1}: {str(e)}")
+                # Clean up any generated audio files
+                for file in audio_files:
+                    try:
+                        os.unlink(file)
+                    except:
+                        pass
+                raise
         
         # Concatenate all audio files if there are multiple chunks
         if len(audio_files) > 1:
@@ -378,22 +404,21 @@ def generate_speech_for_long_text(text, voice="nova"):
         
         # Generate audio for each chunk
         for i, chunk in enumerate(chunks):
-            with st.spinner(f"Generating audio part {i+1}/{len(chunks)}..."):
-                try:
-                    audio_path = generate_speech_default(chunk, voice=voice)
-                    if audio_path:
-                        audio_files.append(audio_path)
-                    else:
-                        raise Exception(f"Failed to generate audio for chunk {i+1}")
-                except Exception as e:
-                    st.error(f"Error generating audio for chunk {i+1}: {str(e)}")
-                    # Clean up any generated audio files
-                    for file in audio_files:
-                        try:
-                            os.unlink(file)
-                        except:
-                            pass
-                    raise
+            try:
+                audio_path = generate_speech_default(chunk, voice=voice)
+                if audio_path:
+                    audio_files.append(audio_path)
+                else:
+                    raise Exception(f"Failed to generate audio for chunk {i+1}")
+            except Exception as e:
+                st.error(f"Error generating audio for chunk {i+1}: {str(e)}")
+                # Clean up any generated audio files
+                for file in audio_files:
+                    try:
+                        os.unlink(file)
+                    except:
+                        pass
+                raise
         
         # Concatenate all audio files
         if len(audio_files) > 1:
@@ -413,22 +438,29 @@ def generate_speech_for_long_text(text, voice="nova"):
         log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
         return None
 
-# Function to load a story from MongoDB to the text file
 def load_story_to_file(story_id):
+    """Load a story from MongoDB to the text file and update session state"""
     story = fetched_stories_collection.find_one({"_id": ObjectId(story_id)})
     if story:
         content = f"Title: {story['title']}\n\nContent: {story['content']}"
         with open("reddit_story.txt", "w", encoding="utf-8") as file:
             file.write(content)
         
-        # Debug: Print the content being written to the file
-        st.write("Content written to file:")
-        st.code(content)
-        
+        # Update session state
         st.session_state.story_saved = True
         st.session_state.current_story_title = story['title']
         return True
     return False
+
+def save_story_to_file(title, content):
+    """Save a story to the text file and update session state"""
+    story_content = f"Title: {title}\n\nContent: {content}"
+    with open("reddit_story.txt", "w", encoding="utf-8") as file:
+        file.write(story_content)
+    
+    # Update session state
+    st.session_state.story_saved = True
+    st.session_state.current_story_title = title
 
 # Create the sidebar for navigation
 st.sidebar.title("Navigation")
@@ -485,7 +517,7 @@ if page == "Reddit Stories":
         if st.button("Fetch Post", key="fetch_post_by_url_button"):
             with st.spinner("Fetching post..."):
                 post_content = fetch_post_by_url(url)
-                save_to_file(f"Title: {post_content['title']}\n\nContent: {post_content['content']}")
+                save_story_to_file(post_content['title'], post_content['content'])
                 
                 # Insert into MongoDB
                 fetched_stories_collection.insert_one({
@@ -494,10 +526,6 @@ if page == "Reddit Stories":
                     'source_url': url,
                     'timestamp': datetime.now()
                 })
-                
-                # Update session state
-                st.session_state.story_saved = True
-                st.session_state.current_story_title = post_content['title']
                 
                 st.success(f"Saved the content of '{post_content['title']}' to file and MongoDB.")
                 st.info("Go to the 'Story Generation' page to create a story based on this post!")
@@ -532,7 +560,7 @@ if page == "Reddit Stories":
             )
             if st.button("Save Selected Post", key="save_subreddit_post_button"):
                 chosen_post = st.session_state.posts[choice - 1]
-                save_to_file(f"Title: {chosen_post['title']}\n\nContent: {chosen_post['content']}")
+                save_story_to_file(chosen_post['title'], chosen_post['content'])
                 
                 # Insert into MongoDB
                 fetched_stories_collection.insert_one({
@@ -542,10 +570,6 @@ if page == "Reddit Stories":
                     'subreddit': subreddit_name,
                     'timestamp': datetime.now()
                 })
-                
-                # Update session state
-                st.session_state.story_saved = True
-                st.session_state.current_story_title = chosen_post['title']
                 
                 st.success(f"Saved the content of '{chosen_post['title']}' to file and MongoDB.")
                 st.info("Go to the 'Story Generation' page to create a story based on this post!")
@@ -606,7 +630,7 @@ if page == "Reddit Stories":
                 )
                 if st.button("Save Selected Post", key="save_query_post_button"):
                     chosen_post = st.session_state.detailed_posts[choice - 1]
-                    save_to_file(f"Title: {chosen_post['title']}\n\nContent: {chosen_post['content']}")
+                    save_story_to_file(chosen_post['title'], chosen_post['content'])
                     
                     # Insert into MongoDB
                     fetched_stories_collection.insert_one({
@@ -617,10 +641,6 @@ if page == "Reddit Stories":
                         'query': user_query,
                         'timestamp': datetime.now()
                     })
-                    
-                    # Update session state
-                    st.session_state.story_saved = True
-                    st.session_state.current_story_title = chosen_post['title']
                     
                     st.success(f"Saved the content of '{chosen_post['title']}' to file and MongoDB.")
                     st.info("Go to the 'Story Generation' page to create a story based on this post!")
@@ -729,7 +749,7 @@ elif page == "YouTube Videos":
                         st.text_area("", transcription, height=300)
                         
                         # Save to file for story generation
-                        save_to_file(f"Title: {video_info['title']}\n\nContent: {transcription}")
+                        save_story_to_file(video_info['title'], transcription)
                         
                         # Update session state
                         st.session_state.story_saved = True
@@ -836,7 +856,7 @@ elif page == "YouTube Videos":
                                 st.text_area("", transcription, height=300)
                                 
                                 # Save to file for story generation
-                                save_to_file(f"Title: {video_info['title']}\n\nContent: {transcription}")
+                                save_story_to_file(video_info['title'], transcription)
                                 
                                 # Update session state
                                 st.session_state.story_saved = True
@@ -886,12 +906,7 @@ elif page == "YouTube Videos":
                     
                     # Button to load this transcription for generation
                     if st.button(f"Load for Story Generation", key=f"load_youtube_{video['_id']}"):
-                        save_to_file(f"Title: {video['title']}\n\nContent: {video['content']}")
-                        
-                        # Update session state
-                        st.session_state.story_saved = True
-                        st.session_state.current_story_title = video['title']
-                        
+                        save_story_to_file(video['title'], video['content'])
                         st.success(f"Loaded '{video['title']}' for story generation.")
                         st.rerun()
         else:
