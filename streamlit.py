@@ -1372,7 +1372,7 @@ else:  # Story Generation
             if st.button("Generate Video and Images"):
                 with st.spinner("Generating content from your story... This may take a few minutes."):
                     try:
-                        # Create output directories with error checking
+                        # Create output directories with error checking.
                         output_dir = "generated_content"
                         try:
                             os.makedirs(output_dir, exist_ok=True)
