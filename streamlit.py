@@ -1523,39 +1523,45 @@ else:  # Story Generation
                 # Video downloads
                 col1, col2 = st.columns(2)
                 with col1:
-                    for i, video_path in enumerate(video_paths):
-                        if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
-                            try:
-                                with open(video_path, "rb") as file:
-                                    video_bytes = file.read()
-                                    st.download_button(
-                                        label=f"Download Video {i+1}",
-                                        data=video_bytes,
-                                        file_name=os.path.basename(video_path),
-                                        mime="video/mp4",
-                                        key=f"download_video_{i}"
-                                    )
-                            except Exception as e:
-                                st.error(f"Error preparing video {i+1} for download: {str(e)}")
-                        else:
-                            st.error(f"Video {i+1} is not available for download")
+                    if video_paths:  # Only show video downloads if we have video paths
+                        for i, video_path in enumerate(video_paths):
+                            if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+                                try:
+                                    with open(video_path, "rb") as file:
+                                        video_bytes = file.read()
+                                        st.download_button(
+                                            label=f"Download Video {i+1}",
+                                            data=video_bytes,
+                                            file_name=os.path.basename(video_path),
+                                            mime="video/mp4",
+                                            key=f"download_video_{i}"
+                                        )
+                                except Exception as e:
+                                    st.error(f"Error preparing video {i+1} for download: {str(e)}")
+                            else:
+                                st.error(f"Video {i+1} is not available for download")
+                    else:
+                        st.info("No videos available for download")
                 
                 # Image downloads
                 with col2:
-                    for i, image_path in enumerate(image_paths):
-                        if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
-                            try:
-                                with open(image_path, "rb") as file:
-                                    image_bytes = file.read()
-                                    st.download_button(
-                                        label=f"Download Image {i+1}",
-                                        data=image_bytes,
-                                        file_name=os.path.basename(image_path),
-                                        mime="image/png",
-                                        key=f"download_image_{i}"
-                                    )
-                            except Exception as e:
-                                st.error(f"Error preparing image {i+1} for download: {str(e)}")
-                        else:
-                            st.error(f"Image {i+1} is not available for download")
+                    if image_paths:  # Only show image downloads if we have image paths
+                        for i, image_path in enumerate(image_paths):
+                            if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
+                                try:
+                                    with open(image_path, "rb") as file:
+                                        image_bytes = file.read()
+                                        st.download_button(
+                                            label=f"Download Image {i+1}",
+                                            data=image_bytes,
+                                            file_name=os.path.basename(image_path),
+                                            mime="image/png",
+                                            key=f"download_image_{i}"
+                                        )
+                                except Exception as e:
+                                    st.error(f"Error preparing image {i+1} for download: {str(e)}")
+                            else:
+                                st.error(f"Image {i+1} is not available for download")
+                    else:
+                        st.info("No images available for download")
 
