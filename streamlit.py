@@ -1507,7 +1507,7 @@ else:  # Story Generation
                     else:
                         st.info("No prompts available to display")
                 
-                # Create columns for download buttons with error checking
+                # Create columns for download buttons with error checking  
                 st.subheader("Download Content")
                 
                 # Video downloads
