@@ -1492,14 +1492,17 @@ else:  # Story Generation
                 
                 # Display prompts used
                 with st.expander("View Used Prompts"):
-                    st.markdown("**Video Generation Prompts:**")
-                    for i, prompt in enumerate(st.session_state.generated_content['prompts'][:len(st.session_state.generated_content['video_paths'])]):
-                        st.markdown(f"**Video {i+1}:**")
-                        st.code(prompt)
-                    st.markdown("**Image Generation Prompts:**")
-                    for i, prompt in enumerate(st.session_state.generated_content['prompts'][len(st.session_state.generated_content['video_paths']):], 1):
-                        st.markdown(f"**Image {i}:**")
-                        st.code(prompt)
+                    if st.session_state.generated_content.get('prompts'):
+                        st.markdown("**Video Generation Prompts:**")
+                        for i, prompt in enumerate(st.session_state.generated_content['prompts'][:len(st.session_state.generated_content.get('video_paths', []))]):
+                            st.markdown(f"**Video {i+1}:**")
+                            st.code(prompt)
+                        st.markdown("**Image Generation Prompts:**")
+                        for i, prompt in enumerate(st.session_state.generated_content['prompts'][len(st.session_state.generated_content.get('video_paths', [])):], 1):
+                            st.markdown(f"**Image {i}:**")
+                            st.code(prompt)
+                    else:
+                        st.info("No prompts available to display")
                 
                 # Create columns for download buttons with error checking
                 st.subheader("Download Content")
@@ -1507,7 +1510,7 @@ else:  # Story Generation
                 # Video downloads
                 col1, col2 = st.columns(2)
                 with col1:
-                    for i, video_path in enumerate(st.session_state.generated_content['video_paths']):
+                    for i, video_path in enumerate(st.session_state.generated_content.get('video_paths', [])):
                         if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
                             try:
                                 with open(video_path, "rb") as file:
@@ -1526,7 +1529,7 @@ else:  # Story Generation
                 
                 # Image downloads
                 with col2:
-                    for i, image_path in enumerate(st.session_state.generated_content['image_paths']):
+                    for i, image_path in enumerate(st.session_state.generated_content.get('image_paths', [])):
                         if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
                             try:
                                 with open(image_path, "rb") as file:
