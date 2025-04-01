@@ -1504,7 +1504,7 @@ else:  # Story Generation
                                 st.error(f"Image {i+1} is not available for display")
                 
                 # Display prompts used
-                with st.expander("View Used Prompts"):
+                with st.expander("View Used Promptssss"):
                     if prompts:
                         st.markdown("**Video Generation Prompts:**")
                         for i, prompt in enumerate(prompts[:len(video_paths)]):
