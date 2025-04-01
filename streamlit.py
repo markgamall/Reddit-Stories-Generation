@@ -1504,7 +1504,7 @@ else:  # Story Generation
                                 st.error(f"Image {i+1} is not available for display")
                 
                 # Display prompts used
-                with st.expander("View Used Promptssss"):
+                with st.expander("View Used Prompts"):
                     if prompts:
                         st.markdown("**Video Generation Prompts:**")
                         for i, prompt in enumerate(prompts[:len(video_paths)]):
@@ -1518,7 +1518,7 @@ else:  # Story Generation
                         st.info("No prompts available to display")
                 
                 # Create columns for download buttons with error checking
-                st.subheader("Download Contennt")
+                st.subheader("Download Content")
                 
                 # Video downloads
                 col1, col2 = st.columns(2)
