@@ -1471,10 +1471,22 @@ else:  # Story Generation
             if 'generated_content' in st.session_state and st.session_state.generated_content is not None:
                 st.subheader("Generated Content")
                 
+                # Initialize paths with empty lists as defaults
+                video_paths = []
+                image_paths = []
+                prompts = []
+                
+                # Get paths from session state if available
+                if st.session_state.generated_content.get('video_paths') is not None:
+                    video_paths = st.session_state.generated_content['video_paths']
+                if st.session_state.generated_content.get('image_paths') is not None:
+                    image_paths = st.session_state.generated_content['image_paths']
+                if st.session_state.generated_content.get('prompts') is not None:
+                    prompts = st.session_state.generated_content['prompts']
+                
                 # Verify the content belongs to the current story
                 if st.session_state.generated_content.get('story_id') == story_data['_id']:
                     # Display videos with error checking
-                    video_paths = st.session_state.generated_content.get('video_paths', [])
                     if video_paths:
                         for i, video_path in enumerate(video_paths):
                             if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
@@ -1484,7 +1496,6 @@ else:  # Story Generation
                                 st.error(f"Video {i+1} is not available for display")
                     
                     # Display images with error checking
-                    image_paths = st.session_state.generated_content.get('image_paths', [])
                     if image_paths:
                         for i, image_path in enumerate(image_paths):
                             if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
@@ -1494,7 +1505,6 @@ else:  # Story Generation
                 
                 # Display prompts used
                 with st.expander("View Used Prompts"):
-                    prompts = st.session_state.generated_content.get('prompts', [])
                     if prompts:
                         st.markdown("**Video Generation Prompts:**")
                         for i, prompt in enumerate(prompts[:len(video_paths)]):
@@ -1507,7 +1517,7 @@ else:  # Story Generation
                     else:
                         st.info("No prompts available to display")
                 
-                # Create columns for download buttons with error checking  
+                # Create columns for download buttons with error checking
                 st.subheader("Download Content")
                 
                 # Video downloads
