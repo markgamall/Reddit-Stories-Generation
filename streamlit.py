@@ -682,8 +682,6 @@ if page == "Reddit Stories":
                                 file_content = file.read()
                             st.write("Content written to file for RAG:")
                             st.code(file_content)
-                            
-                            st.rerun()
         else:
             st.info("No fetched stories available. Use the first three tabs to fetch and save Reddit posts.")
 
@@ -909,7 +907,6 @@ elif page == "YouTube Videos":
                     if st.button(f"Load for Story Generation", key=f"load_youtube_{video['_id']}"):
                         save_story_to_file(video['title'], video['content'])
                         st.success(f"Loaded '{video['title']}' for story generation.")
-                        st.rerun()
         else:
             st.info("No YouTube transcriptions available. Use the 'Fetch YouTube Video' tab to fetch video transcriptions.")
 
