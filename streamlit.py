@@ -1468,14 +1468,15 @@ else:  # Story Generation
                         log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
             
             # Display generated content if available
-            if 'generated_content' in st.session_state and st.session_state.generated_content:
+            if 'generated_content' in st.session_state and st.session_state.generated_content is not None:
                 st.subheader("Generated Content")
                 
                 # Verify the content belongs to the current story
                 if st.session_state.generated_content.get('story_id') == story_data['_id']:
                     # Display videos with error checking
-                    if st.session_state.generated_content.get('video_paths'):
-                        for i, video_path in enumerate(st.session_state.generated_content['video_paths']):
+                    video_paths = st.session_state.generated_content.get('video_paths', [])
+                    if video_paths:
+                        for i, video_path in enumerate(video_paths):
                             if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
                                 st.markdown(f"**Generated Video {i+1}**")
                                 st.video(video_path)
@@ -1483,8 +1484,9 @@ else:  # Story Generation
                                 st.error(f"Video {i+1} is not available for display")
                     
                     # Display images with error checking
-                    if st.session_state.generated_content.get('image_paths'):
-                        for i, image_path in enumerate(st.session_state.generated_content['image_paths']):
+                    image_paths = st.session_state.generated_content.get('image_paths', [])
+                    if image_paths:
+                        for i, image_path in enumerate(image_paths):
                             if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
                                 st.image(image_path, caption=f"Generated Image {i+1}")
                             else:
@@ -1492,13 +1494,14 @@ else:  # Story Generation
                 
                 # Display prompts used
                 with st.expander("View Used Prompts"):
-                    if st.session_state.generated_content.get('prompts'):
+                    prompts = st.session_state.generated_content.get('prompts', [])
+                    if prompts:
                         st.markdown("**Video Generation Prompts:**")
-                        for i, prompt in enumerate(st.session_state.generated_content['prompts'][:len(st.session_state.generated_content.get('video_paths', []))]):
+                        for i, prompt in enumerate(prompts[:len(video_paths)]):
                             st.markdown(f"**Video {i+1}:**")
                             st.code(prompt)
                         st.markdown("**Image Generation Prompts:**")
-                        for i, prompt in enumerate(st.session_state.generated_content['prompts'][len(st.session_state.generated_content.get('video_paths', [])):], 1):
+                        for i, prompt in enumerate(prompts[len(video_paths):], 1):
                             st.markdown(f"**Image {i}:**")
                             st.code(prompt)
                     else:
@@ -1510,7 +1513,7 @@ else:  # Story Generation
                 # Video downloads
                 col1, col2 = st.columns(2)
                 with col1:
-                    for i, video_path in enumerate(st.session_state.generated_content.get('video_paths', [])):
+                    for i, video_path in enumerate(video_paths):
                         if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
                             try:
                                 with open(video_path, "rb") as file:
@@ -1529,7 +1532,7 @@ else:  # Story Generation
                 
                 # Image downloads
                 with col2:
-                    for i, image_path in enumerate(st.session_state.generated_content.get('image_paths', [])):
+                    for i, image_path in enumerate(image_paths):
                         if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
                             try:
                                 with open(image_path, "rb") as file:
