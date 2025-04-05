@@ -254,13 +254,13 @@ def generate_speech(text):
                         input=chunk,
                         response_format="mp3"
                     )
-        
-        # Save the audio to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
+                    
+                    # Save the audio to a temporary file
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
                         temp_file.write(response.content)
                         audio_files.append(temp_file.name)
-        
-    except Exception as e: 
+                        
+                except Exception as e:
                     st.error(f"Error generating audio: {str(e)}")
                     # Clean up any generated audio files
                     for file in audio_files:
@@ -307,16 +307,16 @@ def generate_speech_default(text, voice="nova"):
         
         # Generate audio for each chunk
         for i, chunk in enumerate(chunks):
-    try:
-        response = openai_client.audio.speech.create(
-            model="tts-1",
-            voice=voice,
+            try:
+                response = openai_client.audio.speech.create(
+                    model="tts-1",
+                    voice=voice,
                     input=chunk
-        )
-        
-        # Save the audio to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
-            temp_file.write(response.content)
+                )
+                
+                # Save the audio to a temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
+                    temp_file.write(response.content)
                     audio_files.append(temp_file.name)
                 
             except Exception as e:
