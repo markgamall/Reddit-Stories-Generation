@@ -1461,6 +1461,7 @@ else:  # Story Generation
                                 'story_id': story_data['_id']  # Add story ID to track which story generated this content
                             }
                             st.success("Content generated successfully!")
+                            st.rerun()  # Rerun to display the generated content
                         else:
                             st.error("No content was generated successfully. Please check the errors above.")
                     except Exception as e:
