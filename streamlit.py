@@ -1423,17 +1423,6 @@ else:  # Story Generation
                                     st.success(f"Video {i+1} generated successfully!")
                                     # Display the video immediately after generation
                                     st.video(output_path)
-                                    # Add download button for the video without causing a refresh
-                                    with open(output_path, "rb") as file:
-                                        video_bytes = file.read()
-                                        st.download_button(
-                                            label=f"Download Video {i+1}",
-                                            data=video_bytes,
-                                            file_name=os.path.basename(output_path),
-                                            mime="video/mp4",
-                                            key=f"download_video_{i}",
-                                            use_container_width=False
-                                        )
                                 else:
                                     st.error(f"Video {i+1} was not generated properly. File is missing or empty.")
                             except Exception as e:
@@ -1462,17 +1451,6 @@ else:  # Story Generation
                                     st.success(f"Image {i} generated successfully!")
                                     # Display the image immediately after generation
                                     st.image(image_path, caption=f"Generated Image {i}")
-                                    # Add download button for the image without causing a refresh
-                                    with open(image_path, "rb") as file:
-                                        image_bytes = file.read()
-                                        st.download_button(
-                                            label=f"Download Image {i}",
-                                            data=image_bytes,
-                                            file_name=os.path.basename(image_path),
-                                            mime="image/png",
-                                            key=f"download_image_{i}",
-                                            use_container_width=False
-                                        )
                                 else:
                                     st.error(f"Image {i} was not generated properly. File is missing or empty.")
                             except Exception as e:
@@ -1488,9 +1466,48 @@ else:  # Story Generation
                                 'story_id': story_data['_id']  # Add story ID to track which story generated this content
                             }
                             st.success("All content generated successfully!")
-
-                        else:
-                            st.error("No content was generated successfully. Please check the errors above.")
+                            
+                            # Add a section for downloading all content after generation is complete
+                            st.subheader("Download Generated Content")
+                            
+                            # Create columns for download buttons
+                            col1, col2 = st.columns(2)
+                            
+                            # Video downloads
+                            with col1:
+                                st.markdown("**Download Videos**")
+                                for i, video_path in enumerate(video_paths):
+                                    if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+                                        try:
+                                            with open(video_path, "rb") as file:
+                                                video_bytes = file.read()
+                                                st.download_button(
+                                                    label=f"Download Video {i+1}",
+                                                    data=video_bytes,
+                                                    file_name=os.path.basename(video_path),
+                                                    mime="video/mp4",
+                                                    key=f"download_video_{i}"
+                                                )
+                                        except Exception as e:
+                                            st.error(f"Error preparing video {i+1} for download: {str(e)}")
+                            
+                            # Image downloads
+                            with col2:
+                                st.markdown("**Download Images**")
+                                for i, image_path in enumerate(image_paths):
+                                    if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
+                                        try:
+                                            with open(image_path, "rb") as file:
+                                                image_bytes = file.read()
+                                                st.download_button(
+                                                    label=f"Download Image {i+1}",
+                                                    data=image_bytes,
+                                                    file_name=os.path.basename(image_path),
+                                                    mime="image/png",
+                                                    key=f"download_image_{i}"
+                                                )
+                                        except Exception as e:
+                                            st.error(f"Error preparing image {i+1} for download: {str(e)}")
                     except Exception as e:
                         st.error(f"Error generating content: {str(e)}")
                         log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
