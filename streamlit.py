@@ -1372,21 +1372,22 @@ else:  # Story Generation
             if st.button("Generate Video and Images"):
                 with st.spinner("Generating content from your story... This may take a few minutes."):
                     try:
-                        # Create output directories with error checking.
+                        # Initialize progress tracking in session state
+                        if 'generation_progress' not in st.session_state:
+                            st.session_state.generation_progress = {
+                                'videos_completed': 0,
+                                'total_videos': 0,
+                                'images_completed': 0,
+                                'total_images': 0,
+                                'status': 'starting',
+                                'last_update': time.time()
+                            }
+                        
+                        # Create output directories with error checking
                         output_dir = "generated_content"
-                        try:
-                            os.makedirs(output_dir, exist_ok=True)
-                            # Test write permissions
-                            test_file = os.path.join(output_dir, "test.txt")
-                            with open(test_file, "w") as f:
-                                f.write("test")
-                            os.remove(test_file)
-                        except Exception as e:
-                            st.error(f"Error creating output directory: {str(e)}")
-                            log_error_to_db(str(e), "Directory Creation Error", traceback.format_exc())
-                            st.stop()
-
-                        # Generate prompts in the background
+                        os.makedirs(output_dir, exist_ok=True)
+                        
+                        # Generate prompts
                         prompts_result = generate_video_prompts(
                             story_data['story'],
                             story_data['_id']
@@ -1394,175 +1395,123 @@ else:  # Story Generation
                         
                         # Calculate number of video prompts based on story length
                         word_count = len(story_data['story'].split())
-                        if 50 <= word_count <= 250:  # Very short stories
-                            num_video_prompts = 1  # 1 video, 1 image
-                        elif 250 < word_count <= 1000:  # Short stories
-                            num_video_prompts = 2  # 2 videos, 1 image
-                        elif 1000 < word_count <= 2500:  # Medium stories
-                            num_video_prompts = 3  # 3 videos, 5 images
-                        else:  # Long stories (2500+ words)
-                            num_video_prompts = 3  # 3 videos, 12 images
+                        if 50 <= word_count <= 250:
+                            num_video_prompts = 1
+                        elif 250 < word_count <= 1000:
+                            num_video_prompts = 2
+                        elif 1000 < word_count <= 2500:
+                            num_video_prompts = 3
+                        else:
+                            num_video_prompts = 3
                         
-                        # Generate videos from first N prompts
-                        st.subheader("Generated Videos")
+                        # Update progress tracking
+                        st.session_state.generation_progress.update({
+                            'total_videos': num_video_prompts,
+                            'total_images': len(prompts_result['prompts']) - num_video_prompts,
+                            'status': 'generating_videos'
+                        })
+                        
+                        # Generate videos with progress tracking
                         video_gen = VideoGenerator()
                         video_paths = []
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
                         
                         for i in range(num_video_prompts):
                             video_filename = f"{output_dir}/generated_video_{story_data['_id']}_{i+1}.mp4"
-                            st.info(f"Generating video {i+1} from prompt {i+1}...")
+                            status_text.text(f"Generating video {i+1} of {num_video_prompts}...")
+                            
                             try:
                                 output_path = video_gen.generate_video(
                                     prompt=prompts_result['prompts'][i],
                                     output_file_name=video_filename,
                                     model=model
                                 )
-                                # Verify the video file exists and has content
+                                
                                 if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                                     video_paths.append(output_path)
-                                    st.success(f"Video {i+1} generated successfully!")
-                                else:
-                                    st.error(f"Video {i+1} was not generated properly. File is missing or empty.")
+                                    st.session_state.generation_progress['videos_completed'] += 1
+                                    progress_bar.progress((i+1)/num_video_prompts)
+                                    
+                                    # Save checkpoint after each video
+                                    st.session_state.generated_content = {
+                                        'video_paths': video_paths,
+                                        'image_paths': [],
+                                        'prompts': prompts_result['prompts'],
+                                        'story_id': story_data['_id'],
+                                        'checkpoint': 'videos_completed'
+                                    }
+                                    st.session_state.generation_progress['last_update'] = time.time()
                             except Exception as e:
                                 st.error(f"Error generating video {i+1}: {str(e)}")
                                 log_error_to_db(str(e), "Video Generation Error", traceback.format_exc())
                         
-                        # Generate images from remaining prompts
-                        st.subheader("Generated Images")
+                        # Generate images with progress tracking
+                        st.session_state.generation_progress['status'] = 'generating_images'
                         image_gen = ImageGenerator()
+                        image_progress = st.progress(0)
+                        image_status = st.empty()
                         
-                        st.info(f"Generating images from {len(prompts_result['prompts'][num_video_prompts:])} prompts...")
+                        total_images = len(prompts_result['prompts'][num_video_prompts:])
+                        image_status.text(f"Generating images from {total_images} prompts...")
+                        
                         try:
                             image_paths = image_gen.generate_images(
                                 prompts=prompts_result['prompts'][num_video_prompts:],
                                 output_dir=output_dir,
                                 aspect_ratio=aspect_ratio,
-                                n=1  # Always generate one image per prompt
+                                n=1
                             )
-                            # Verify each image exists and has content
+                            
                             valid_image_paths = []
-                            for img_path in image_paths:
+                            for i, img_path in enumerate(image_paths):
                                 if os.path.exists(img_path) and os.path.getsize(img_path) > 0:
                                     valid_image_paths.append(img_path)
-                                else:
-                                    st.error(f"Image was not generated properly: {img_path}")
+                                    st.session_state.generation_progress['images_completed'] += 1
+                                    image_progress.progress((i+1)/total_images)
                             image_paths = valid_image_paths
+                            
+                            # Save final checkpoint
+                            if video_paths or image_paths:
+                                st.session_state.generated_content = {
+                                    'video_paths': video_paths,
+                                    'image_paths': image_paths,
+                                    'prompts': prompts_result['prompts'],
+                                    'story_id': story_data['_id']
+                                }
+                                st.session_state.generation_progress['status'] = 'all_completed'
+                                st.success("Content generated successfully!")
+                                st.rerun()
+                            else:
+                                st.error("No content was generated successfully. Please check the errors above.")
                         except Exception as e:
                             st.error(f"Error generating images: {str(e)}")
                             log_error_to_db(str(e), "Image Generation Error", traceback.format_exc())
-                            image_paths = []
-                        
-                        # Store generated content in session state only if we have valid files
-                        if video_paths or image_paths:
-                            st.session_state.generated_content = {
-                                'video_paths': video_paths,
-                                'image_paths': image_paths,
-                                'prompts': prompts_result['prompts'],
-                                'story_id': story_data['_id']  # Add story ID to track which story generated this content
-                            }
-                            st.success("Content generated successfully!")
-                            st.rerun()  # Rerun to display the generated content
-                        else:
-                            st.error("No content was generated successfully. Please check the errors above.")
+                            
                     except Exception as e:
-                        st.error(f"Error generating content: {str(e)}")
+                        st.error(f"Error in generation process: {str(e)}")
                         log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
             
-            # Display generated content if available
-            if 'generated_content' in st.session_state and st.session_state.generated_content is not None:
-                st.subheader("Generated Content")
+            # Display generation progress if in progress
+            if 'generation_progress' in st.session_state and st.session_state.generation_progress['status'] != 'all_completed':
+                st.subheader("Generation Progress")
+                progress = st.session_state.generation_progress
                 
-                # Initialize paths with empty lists as defaults
-                video_paths = []
-                image_paths = []
-                prompts = []
+                # Calculate overall progress
+                total_tasks = progress['total_videos'] + progress['total_images']
+                completed_tasks = progress['videos_completed'] + progress['images_completed']
+                overall_progress = completed_tasks / total_tasks if total_tasks > 0 else 0
                 
-                # Get paths from session state if available
-                if st.session_state.generated_content.get('video_paths') is not None:
-                    video_paths = st.session_state.generated_content['video_paths']
-                if st.session_state.generated_content.get('image_paths') is not None:
-                    image_paths = st.session_state.generated_content['image_paths']
-                if st.session_state.generated_content.get('prompts') is not None:
-                    prompts = st.session_state.generated_content['prompts']
+                # Display progress
+                st.progress(overall_progress)
+                st.write(f"Overall Progress: {completed_tasks}/{total_tasks} items completed")
+                st.write(f"Videos: {progress['videos_completed']}/{progress['total_videos']} completed")
+                st.write(f"Images: {progress['images_completed']}/{progress['total_images']} completed")
+                st.write(f"Current Status: {progress['status']}")
                 
-                # Verify the content belongs to the current story
-                if st.session_state.generated_content.get('story_id') == story_data['_id']:
-                    # Display videos with error checking
-                    if video_paths:
-                        for i, video_path in enumerate(video_paths):
-                            if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
-                                st.markdown(f"**Generated Video {i+1}**")
-                                st.video(video_path)
-                            else:
-                                st.error(f"Video {i+1} is not available for display")
-                    
-                    # Display images with error checking
-                    if image_paths:
-                        for i, image_path in enumerate(image_paths):
-                            if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
-                                st.image(image_path, caption=f"Generated Image {i+1}")
-                            else:
-                                st.error(f"Image {i+1} is not available for display")
-                
-                # Display prompts used
-                with st.expander("View Used Prompts"):
-                    if prompts:
-                        st.markdown("**Video Generation Prompts:**")
-                        for i, prompt in enumerate(prompts[:len(video_paths)]):
-                            st.markdown(f"**Video {i+1}:**")
-                            st.code(prompt)
-                        st.markdown("**Image Generation Prompts:**")
-                        for i, prompt in enumerate(prompts[len(video_paths):], 1):
-                            st.markdown(f"**Image {i}:**")
-                            st.code(prompt)
-                    else:
-                        st.info("No prompts available to display")
-                
-                # Create columns for download buttons with error checking
-                st.subheader("Download Content")
-                
-                # Video downloads
-                col1, col2 = st.columns(2)
-                with col1:
-                    if video_paths:  # Only show video downloads if we have video paths
-                        for i, video_path in enumerate(video_paths):
-                            if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
-                                try:
-                                    with open(video_path, "rb") as file:
-                                        video_bytes = file.read()
-                                        st.download_button(
-                                            label=f"Download Video {i+1}",
-                                            data=video_bytes,
-                                            file_name=os.path.basename(video_path),
-                                            mime="video/mp4",
-                                            key=f"download_video_{i}"
-                                        )
-                                except Exception as e:
-                                    st.error(f"Error preparing video {i+1} for download: {str(e)}")
-                            else:
-                                st.error(f"Video {i+1} is not available for download")
-                    else:
-                        st.info("No videos available for download")
-                
-                # Image downloads
-                with col2:
-                    if image_paths:  # Only show image downloads if we have image paths
-                        for i, image_path in enumerate(image_paths):
-                            if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
-                                try:
-                                    with open(image_path, "rb") as file:
-                                        image_bytes = file.read()
-                                        st.download_button(
-                                            label=f"Download Image {i+1}",
-                                            data=image_bytes,
-                                            file_name=os.path.basename(image_path),
-                                            mime="image/png",
-                                            key=f"download_image_{i}"
-                                        )
-                                except Exception as e:
-                                    st.error(f"Error preparing image {i+1} for download: {str(e)}")
-                            else:
-                                st.error(f"Image {i+1} is not available for download")
-                    else:
-                        st.info("No images available for download")
+                # Check for stalled progress
+                time_since_update = time.time() - progress['last_update']
+                if time_since_update > 60:
+                    st.warning(f"No updates for {int(time_since_update/60)} minutes. The generation might be stuck.")
+                    st.info("If the generation appears stuck, you can refresh the page to check progress.")
 
