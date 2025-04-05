@@ -1423,7 +1423,7 @@ else:  # Story Generation
                                     st.success(f"Video {i+1} generated successfully!")
                                     # Display the video immediately after generation
                                     st.video(output_path)
-                                    # Add download button for the video
+                                    # Add download button for the video without causing a refresh
                                     with open(output_path, "rb") as file:
                                         video_bytes = file.read()
                                         st.download_button(
@@ -1431,7 +1431,8 @@ else:  # Story Generation
                                             data=video_bytes,
                                             file_name=os.path.basename(output_path),
                                             mime="video/mp4",
-                                            key=f"download_video_{i}"
+                                            key=f"download_video_{i}",
+                                            use_container_width=False
                                         )
                                 else:
                                     st.error(f"Video {i+1} was not generated properly. File is missing or empty.")
@@ -1461,7 +1462,7 @@ else:  # Story Generation
                                     st.success(f"Image {i} generated successfully!")
                                     # Display the image immediately after generation
                                     st.image(image_path, caption=f"Generated Image {i}")
-                                    # Add download button for the image
+                                    # Add download button for the image without causing a refresh
                                     with open(image_path, "rb") as file:
                                         image_bytes = file.read()
                                         st.download_button(
@@ -1469,7 +1470,8 @@ else:  # Story Generation
                                             data=image_bytes,
                                             file_name=os.path.basename(image_path),
                                             mime="image/png",
-                                            key=f"download_image_{i}"
+                                            key=f"download_image_{i}",
+                                            use_container_width=False
                                         )
                                 else:
                                     st.error(f"Image {i} was not generated properly. File is missing or empty.")
@@ -1486,7 +1488,6 @@ else:  # Story Generation
                                 'story_id': story_data['_id']  # Add story ID to track which story generated this content
                             }
                             st.success("All content generated successfully!")
-                            st.rerun()  # Rerun to display the generated content
 
                         else:
                             st.error("No content was generated successfully. Please check the errors above.")
