@@ -1401,7 +1401,7 @@ else:  # Story Generation
                             
                             # Calculate number of video prompts based on story length
                             word_count = len(story_data['story'].split())
-                            if 50 <= word_count <= 250:  # Very short stories
+                            if word_count <= 250:  # Very short stories
                                 num_video_prompts = 1
                             elif 250 < word_count <= 1000:  # Short stories
                                 num_video_prompts = 2
