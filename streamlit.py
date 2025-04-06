@@ -1403,8 +1403,10 @@ else:  # Story Generation
                         else:  # Long stories (2500+ words)
                             num_video_prompts = 3  # 3 videos, 12 images
                         
-                        # Generate videos from first N prompts
+                        # Display a section header for videos
                         st.subheader("Generated Videos")
+                        
+                        # Generate videos from first N prompts
                         video_gen = VideoGenerator()
                         video_paths = []
                         
@@ -1421,32 +1423,43 @@ else:  # Story Generation
                                 if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                                     video_paths.append(output_path)
                                     st.success(f"Video {i+1} generated successfully!")
+                                    
+                                    # Display the video immediately after generation
+                                    st.markdown(f"**Generated Video {i+1}**")
+                                    st.video(output_path)
                                 else:
                                     st.error(f"Video {i+1} was not generated properly. File is missing or empty.")
                             except Exception as e:
                                 st.error(f"Error generating video {i+1}: {str(e)}")
                                 log_error_to_db(str(e), "Video Generation Error", traceback.format_exc())
                         
-                        # Generate images from remaining prompts
+                        # Display a section header for images
                         st.subheader("Generated Images")
                         image_gen = ImageGenerator()
                         
                         st.info(f"Generating images from {len(prompts_result['prompts'][num_video_prompts:])} prompts...")
                         try:
+                            # Generate all images at once (assuming this is how your ImageGenerator works)
                             image_paths = image_gen.generate_images(
                                 prompts=prompts_result['prompts'][num_video_prompts:],
                                 output_dir=output_dir,
                                 aspect_ratio=aspect_ratio,
                                 n=1  # Always generate one image per prompt
                             )
-                            # Verify each image exists and has content
+                            
+                            # Verify and display each image as they're validated
                             valid_image_paths = []
-                            for img_path in image_paths:
+                            for i, img_path in enumerate(image_paths):
                                 if os.path.exists(img_path) and os.path.getsize(img_path) > 0:
                                     valid_image_paths.append(img_path)
+                                    # Display the image immediately
+                                    st.image(img_path, caption=f"Generated Image {i+1}")
                                 else:
-                                    st.error(f"Image was not generated properly: {img_path}")
+                                    st.error(f"Image {i+1} was not generated properly: {img_path}")
+                            
+                            # Update the image_paths variable to only include valid images
                             image_paths = valid_image_paths
+                            
                         except Exception as e:
                             st.error(f"Error generating images: {str(e)}")
                             log_error_to_db(str(e), "Image Generation Error", traceback.format_exc())
@@ -1461,16 +1474,77 @@ else:  # Story Generation
                                 'story_id': story_data['_id']  # Add story ID to track which story generated this content
                             }
                             st.success("Content generated successfully!")
-                            st.rerun()  # Rerun to display the generated content
-
+                            
+                            # Display download options
+                            st.subheader("Download Content")
+                            
+                            # Video downloads
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if video_paths:  # Only show video downloads if we have video paths
+                                    for i, video_path in enumerate(video_paths):
+                                        if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+                                            try:
+                                                with open(video_path, "rb") as file:
+                                                    video_bytes = file.read()
+                                                    st.download_button(
+                                                        label=f"Download Video {i+1}",
+                                                        data=video_bytes,
+                                                        file_name=os.path.basename(video_path),
+                                                        mime="video/mp4",
+                                                        key=f"download_video_{i}"
+                                                    )
+                                            except Exception as e:
+                                                st.error(f"Error preparing video {i+1} for download: {str(e)}")
+                                        else:
+                                            st.error(f"Video {i+1} is not available for download")
+                                else:
+                                    st.info("No videos available for download")
+                            
+                            # Image downloads
+                            with col2:
+                                if image_paths:  # Only show image downloads if we have image paths
+                                    for i, image_path in enumerate(image_paths):
+                                        if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
+                                            try:
+                                                with open(image_path, "rb") as file:
+                                                    image_bytes = file.read()
+                                                    st.download_button(
+                                                        label=f"Download Image {i+1}",
+                                                        data=image_bytes,
+                                                        file_name=os.path.basename(image_path),
+                                                        mime="image/png",
+                                                        key=f"download_image_{i}"
+                                                    )
+                                            except Exception as e:
+                                                st.error(f"Error preparing image {i+1} for download: {str(e)}")
+                                        else:
+                                            st.error(f"Image {i+1} is not available for download")
+                                else:
+                                    st.info("No images available for download")
+                            
+                            # Display prompts used
+                            with st.expander("View Used Prompts"):
+                                if prompts_result['prompts']:
+                                    st.markdown("**Video Generation Prompts:**")
+                                    for i, prompt in enumerate(prompts_result['prompts'][:len(video_paths)]):
+                                        st.markdown(f"**Video {i+1}:**")
+                                        st.code(prompt)
+                                    st.markdown("**Image Generation Prompts:**")
+                                    for i, prompt in enumerate(prompts_result['prompts'][len(video_paths):], 1):
+                                        st.markdown(f"**Image {i}:**")
+                                        st.code(prompt)
+                                else:
+                                    st.info("No prompts available to display")
+                            
                         else:
                             st.error("No content was generated successfully. Please check the errors above.")
                     except Exception as e:
                         st.error(f"Error generating content: {str(e)}")
                         log_error_to_db(str(e), type(e).__name__, traceback.format_exc())
             
-            # Display generated content if available
-            if 'generated_content' in st.session_state and st.session_state.generated_content is not None:
+            # Display previously generated content when revisiting the page
+            elif 'generated_content' in st.session_state and st.session_state.generated_content is not None:
                 st.subheader("Generated Content")
                 
                 # Initialize paths with empty lists as defaults
@@ -1505,65 +1579,64 @@ else:  # Story Generation
                             else:
                                 st.error(f"Image {i+1} is not available for display")
                 
-                # Display prompts used
-                with st.expander("View Used Prompts"):
-                    if prompts:
-                        st.markdown("**Video Generation Prompts:**")
-                        for i, prompt in enumerate(prompts[:len(video_paths)]):
-                            st.markdown(f"**Video {i+1}:**")
-                            st.code(prompt)
-                        st.markdown("**Image Generation Prompts:**")
-                        for i, prompt in enumerate(prompts[len(video_paths):], 1):
-                            st.markdown(f"**Image {i}:**")
-                            st.code(prompt)
-                    else:
-                        st.info("No prompts available to display")
-                
-                # Create columns for download buttons with error checking
-                st.subheader("Download Content")
-                
-                # Video downloads
-                col1, col2 = st.columns(2)
-                with col1:
-                    if video_paths:  # Only show video downloads if we have video paths
-                        for i, video_path in enumerate(video_paths):
-                            if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
-                                try:
-                                    with open(video_path, "rb") as file:
-                                        video_bytes = file.read()
-                                        st.download_button(
-                                            label=f"Download Video {i+1}",
-                                            data=video_bytes,
-                                            file_name=os.path.basename(video_path),
-                                            mime="video/mp4",
-                                            key=f"download_video_{i}"
-                                        )
-                                except Exception as e:
-                                    st.error(f"Error preparing video {i+1} for download: {str(e)}")
-                            else:
-                                st.error(f"Video {i+1} is not available for download")
-                    else:
-                        st.info("No videos available for download")
-                
-                # Image downloads
-                with col2:
-                    if image_paths:  # Only show image downloads if we have image paths
-                        for i, image_path in enumerate(image_paths):
-                            if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
-                                try:
-                                    with open(image_path, "rb") as file:
-                                        image_bytes = file.read()
-                                        st.download_button(
-                                            label=f"Download Image {i+1}",
-                                            data=image_bytes,
-                                            file_name=os.path.basename(image_path),
-                                            mime="image/png",
-                                            key=f"download_image_{i}"
-                                        )
-                                except Exception as e:
-                                    st.error(f"Error preparing image {i+1} for download: {str(e)}")
-                            else:
-                                st.error(f"Image {i+1} is not available for download")
-                    else:
-                        st.info("No images available for download")
-
+                    # Display prompts used
+                    with st.expander("View Used Prompts"):
+                        if prompts:
+                            st.markdown("**Video Generation Prompts:**")
+                            for i, prompt in enumerate(prompts[:len(video_paths)]):
+                                st.markdown(f"**Video {i+1}:**")
+                                st.code(prompt)
+                            st.markdown("**Image Generation Prompts:**")
+                            for i, prompt in enumerate(prompts[len(video_paths):], 1):
+                                st.markdown(f"**Image {i}:**")
+                                st.code(prompt)
+                        else:
+                            st.info("No prompts available to display")
+                    
+                    # Create columns for download buttons with error checking
+                    st.subheader("Download Content")
+                    
+                    # Video downloads
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if video_paths:  # Only show video downloads if we have video paths
+                            for i, video_path in enumerate(video_paths):
+                                if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+                                    try:
+                                        with open(video_path, "rb") as file:
+                                            video_bytes = file.read()
+                                            st.download_button(
+                                                label=f"Download Video {i+1}",
+                                                data=video_bytes,
+                                                file_name=os.path.basename(video_path),
+                                                mime="video/mp4",
+                                                key=f"download_video_{i}"
+                                            )
+                                    except Exception as e:
+                                        st.error(f"Error preparing video {i+1} for download: {str(e)}")
+                                else:
+                                    st.error(f"Video {i+1} is not available for download")
+                        else:
+                            st.info("No videos available for download")
+                    
+                    # Image downloads
+                    with col2:
+                        if image_paths:  # Only show image downloads if we have image paths
+                            for i, image_path in enumerate(image_paths):
+                                if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
+                                    try:
+                                        with open(image_path, "rb") as file:
+                                            image_bytes = file.read()
+                                            st.download_button(
+                                                label=f"Download Image {i+1}",
+                                                data=image_bytes,
+                                                file_name=os.path.basename(image_path),
+                                                mime="image/png",
+                                                key=f"download_image_{i}"
+                                            )
+                                    except Exception as e:
+                                        st.error(f"Error preparing image {i+1} for download: {str(e)}")
+                                else:
+                                    st.error(f"Image {i+1} is not available for download")
+                        else:
+                            st.info("No images available for download")
