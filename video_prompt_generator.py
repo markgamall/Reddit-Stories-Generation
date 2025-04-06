@@ -2,6 +2,11 @@ import os
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 import tiktoken
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -47,34 +52,66 @@ def truncate_story(story, max_tokens=6000):
     Returns:
         str: Truncated story
     """
-    # Get the encoding once
-    encoding = tiktoken.encoding_for_model("gpt-4")
-    
-    # Calculate initial token count
-    initial_tokens = len(encoding.encode(story))
-    
-    # If story is already within limits, return it
-    if initial_tokens <= max_tokens:
-        return story
+    try:
+        logger.info(f"Starting story truncation with max_tokens: {max_tokens}")
         
-    # Split into sentences (basic implementation)
-    sentences = story.replace('\n', ' ').split('. ')
-    truncated_story = ''
-    current_tokens = 0
-    
-    for sentence in sentences:
-        # Add the sentence and a period
-        test_story = truncated_story + sentence + '. '
-        # Calculate tokens for the new sentence only
-        new_tokens = len(encoding.encode(sentence + '. '))
+        # Get the encoding once
+        encoding = tiktoken.encoding_for_model("gpt-4")
+        logger.info("Successfully initialized tiktoken encoding")
         
-        if current_tokens + new_tokens > max_tokens:
-            break
+        # Calculate initial token count
+        initial_tokens = len(encoding.encode(story))
+        logger.info(f"Initial story token count: {initial_tokens}")
+        
+        # If story is already within limits, return it
+        if initial_tokens <= max_tokens:
+            logger.info("Story is within token limits, no truncation needed")
+            return story
             
-        truncated_story = test_story
-        current_tokens += new_tokens
-    
-    return truncated_story.strip()
+        # Split into sentences (basic implementation)
+        sentences = story.replace('\n', ' ').split('. ')
+        logger.info(f"Split story into {len(sentences)} sentences")
+        
+        truncated_story = ''
+        current_tokens = 0
+        sentences_processed = 0
+        
+        for sentence in sentences:
+            try:
+                # Add the sentence and a period
+                test_story = truncated_story + sentence + '. '
+                # Calculate tokens for the new sentence only
+                new_tokens = len(encoding.encode(sentence + '. '))
+                
+                logger.debug(f"Processing sentence {sentences_processed + 1}:")
+                logger.debug(f"- Sentence length: {len(sentence)} chars")
+                logger.debug(f"- New tokens: {new_tokens}")
+                logger.debug(f"- Current total tokens: {current_tokens}")
+                
+                if current_tokens + new_tokens > max_tokens:
+                    logger.info(f"Reached token limit after {sentences_processed} sentences")
+                    logger.info(f"Final token count: {current_tokens}")
+                    break
+                    
+                truncated_story = test_story
+                current_tokens += new_tokens
+                sentences_processed += 1
+                
+            except Exception as e:
+                logger.error(f"Error processing sentence {sentences_processed + 1}: {str(e)}")
+                logger.error(f"Sentence content: {sentence[:100]}...")  # Log first 100 chars of problematic sentence
+                raise
+        
+        logger.info(f"Truncation complete. Processed {sentences_processed} sentences")
+        logger.info(f"Final truncated story length: {len(truncated_story)} chars")
+        logger.info(f"Final token count: {current_tokens}")
+        
+        return truncated_story.strip()
+        
+    except Exception as e:
+        logger.error(f"Error in truncate_story: {str(e)}")
+        logger.error(f"Story length: {len(story)} chars")
+        raise
 
 def calculate_number_of_prompts(story, max_prompts=15):
     """
