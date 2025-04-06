@@ -1356,6 +1356,9 @@ else:  # Story Generation
                                 if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                                     video_paths.append(output_path)
                                     st.success(f"Video {i+1} generated successfully!")
+                                    # Display the video immediately after generation
+                                    st.markdown(f"**Generated Video {i+1}**")
+                                    st.video(output_path)
                                 else:
                                     st.error(f"Video {i+1} was not generated properly. File is missing or empty.")
                             except Exception as e:
@@ -1382,6 +1385,8 @@ else:  # Story Generation
                                 if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
                                     image_paths.append(image_path)
                                     st.success(f"Image {i} generated successfully!")
+                                    # Display the image immediately after generation
+                                    st.image(image_path, caption=f"Generated Image {i}")
                                 else:
                                     st.error(f"Image {i} was not generated properly. File is missing or empty.")
                             except Exception as e:
@@ -1398,22 +1403,6 @@ else:  # Story Generation
                             }
                             st.success("All content generated successfully!")
                             
-                            # Display generated content
-                            st.subheader("Generated Content")
-                            
-                            # Display videos
-                            if video_paths:
-                                for i, video_path in enumerate(video_paths):
-                                    if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
-                                        st.markdown(f"**Generated Video {i+1}**")
-                                        st.video(video_path)
-                            
-                            # Display images
-                            if image_paths:
-                                for i, image_path in enumerate(image_paths):
-                                    if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
-                                        st.image(image_path, caption=f"Generated Image {i+1}")
-                            
                             # Display prompts used
                             with st.expander("View Used Prompts"):
                                 if prompts_result['prompts']:
@@ -1428,7 +1417,7 @@ else:  # Story Generation
                                 else:
                                     st.info("No prompts available to display")
                             
-                            # Add download buttons
+                            # Add download buttons at the end
                             st.subheader("Download Content")
                             col1, col2 = st.columns(2)
                             
