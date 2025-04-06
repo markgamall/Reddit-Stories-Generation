@@ -1,6 +1,7 @@
 import os
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
+import tiktoken
 
 # Load environment variables
 load_dotenv()
@@ -21,6 +22,59 @@ For each prompt:
 7. Include relevant visual style references
 
 Format each prompt as a numbered list item. Each prompt should be self-contained and able to generate a specific scene or sequence from the story."""
+
+def estimate_tokens(text):
+    """
+    Estimate the number of tokens in a text using tiktoken.
+    
+    Args:
+        text (str): The text to estimate tokens for
+        
+    Returns:
+        int: Estimated number of tokens
+    """
+    encoding = tiktoken.encoding_for_model("gpt-4")
+    return len(encoding.encode(text))
+
+def truncate_story(story, max_tokens=6000):
+    """
+    Truncate a story to fit within token limits while preserving complete sentences.
+    
+    Args:
+        story (str): The story to truncate
+        max_tokens (int): Maximum number of tokens allowed
+        
+    Returns:
+        str: Truncated story
+    """
+    # Get the encoding once
+    encoding = tiktoken.encoding_for_model("gpt-4")
+    
+    # Calculate initial token count
+    initial_tokens = len(encoding.encode(story))
+    
+    # If story is already within limits, return it
+    if initial_tokens <= max_tokens:
+        return story
+        
+    # Split into sentences (basic implementation)
+    sentences = story.replace('\n', ' ').split('. ')
+    truncated_story = ''
+    current_tokens = 0
+    
+    for sentence in sentences:
+        # Add the sentence and a period
+        test_story = truncated_story + sentence + '. '
+        # Calculate tokens for the new sentence only
+        new_tokens = len(encoding.encode(sentence + '. '))
+        
+        if current_tokens + new_tokens > max_tokens:
+            break
+            
+        truncated_story = test_story
+        current_tokens += new_tokens
+    
+    return truncated_story.strip()
 
 def calculate_number_of_prompts(story, max_prompts=15):
     """
@@ -60,15 +114,18 @@ def generate_video_prompts(story, unique_id):
         dict: Contains the prompts and metadata
     """
     try:
+        # Truncate story to fit within token limits
+        truncated_story = truncate_story(story)
+        
         # Calculate number of prompts dynamically
-        num_prompts = calculate_number_of_prompts(story)
+        num_prompts = calculate_number_of_prompts(truncated_story)
         
         # Create the prompt for the LLM
         prompt = f"""
         {system_message}
         
         Story:
-        {story}
+        {truncated_story}
         
         Generate {num_prompts} detailed images prompts that would work well with text-to-image AI models.
         """

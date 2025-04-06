@@ -1309,7 +1309,7 @@ else:  # Story Generation
             """Clean up old generated content files"""
             try:
                 output_dir = "generated_content"
-                if os.path.exists(output_dir):
+                if os.path.exists(output_dir):  
                     # Get all files in the directory
                     for filename in os.listdir(output_dir):
                         file_path = os.path.join(output_dir, filename)
