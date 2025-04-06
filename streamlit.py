@@ -1010,7 +1010,7 @@ else:  # Story Generation
                         else:
                             st.info("No prompts available to display")
                     
-                    # Add download buttons with unique keys
+                    # Add download buttons at the end
                     st.subheader("Download Content")
                     col1, col2 = st.columns(2)
                     
@@ -1020,14 +1020,23 @@ else:  # Story Generation
                             for i, video_path in enumerate(st.session_state.generated_content['video_paths']):
                                 if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
                                     try:
-                                        with open(video_path, "rb") as file:
-                                            video_bytes = file.read()
+                                        # Create a unique key for each download button
+                                        download_key = f"download_video_{story_data['_id']}_{i}"
+                                        
+                                        # Use a container to prevent the download button from causing a full page refresh
+                                        with st.container():
+                                            # Store the file path in session state to access it later
+                                            if download_key not in st.session_state:
+                                                st.session_state[download_key] = video_path
+                                            
+                                            # Create a download button that doesn't trigger a full page refresh
                                             st.download_button(
                                                 label=f"Download Video {i+1}",
-                                                data=video_bytes,
+                                                data=open(st.session_state[download_key], "rb").read(),
                                                 file_name=os.path.basename(video_path),
                                                 mime="video/mp4",
-                                                key=f"download_video_{story_data['_id']}_{i}"
+                                                key=download_key,
+                                                use_container_width=True
                                             )
                                     except Exception as e:
                                         st.error(f"Error preparing video {i+1} for download: {str(e)}")
@@ -1038,14 +1047,23 @@ else:  # Story Generation
                             for i, image_path in enumerate(st.session_state.generated_content['image_paths']):
                                 if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
                                     try:
-                                        with open(image_path, "rb") as file:
-                                            image_bytes = file.read()
+                                        # Create a unique key for each download button
+                                        download_key = f"download_image_{story_data['_id']}_{i}"
+                                        
+                                        # Use a container to prevent the download button from causing a full page refresh
+                                        with st.container():
+                                            # Store the file path in session state to access it later
+                                            if download_key not in st.session_state:
+                                                st.session_state[download_key] = image_path
+                                            
+                                            # Create a download button that doesn't trigger a full page refresh
                                             st.download_button(
                                                 label=f"Download Image {i+1}",
-                                                data=image_bytes,
+                                                data=open(st.session_state[download_key], "rb").read(),
                                                 file_name=os.path.basename(image_path),
                                                 mime="image/png",
-                                                key=f"download_image_{story_data['_id']}_{i}"
+                                                key=download_key,
+                                                use_container_width=True
                                             )
                                     except Exception as e:
                                         st.error(f"Error preparing image {i+1} for download: {str(e)}")
@@ -1427,14 +1445,23 @@ else:  # Story Generation
                                     for i, video_path in enumerate(video_paths):
                                         if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
                                             try:
-                                                with open(video_path, "rb") as file:
-                                                    video_bytes = file.read()
+                                                # Create a unique key for each download button
+                                                download_key = f"download_video_{story_data['_id']}_{i}"
+                                                
+                                                # Use a container to prevent the download button from causing a full page refresh
+                                                with st.container():
+                                                    # Store the file path in session state to access it later
+                                                    if download_key not in st.session_state:
+                                                        st.session_state[download_key] = video_path
+                                                    
+                                                    # Create a download button that doesn't trigger a full page refresh
                                                     st.download_button(
                                                         label=f"Download Video {i+1}",
-                                                        data=video_bytes,
+                                                        data=open(st.session_state[download_key], "rb").read(),
                                                         file_name=os.path.basename(video_path),
                                                         mime="video/mp4",
-                                                        key=f"download_video_{story_data['_id']}_{i}"
+                                                        key=download_key,
+                                                        use_container_width=True
                                                     )
                                             except Exception as e:
                                                 st.error(f"Error preparing video {i+1} for download: {str(e)}")
@@ -1445,14 +1472,23 @@ else:  # Story Generation
                                     for i, image_path in enumerate(image_paths):
                                         if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
                                             try:
-                                                with open(image_path, "rb") as file:
-                                                    image_bytes = file.read()
+                                                # Create a unique key for each download button
+                                                download_key = f"download_image_{story_data['_id']}_{i}"
+                                                
+                                                # Use a container to prevent the download button from causing a full page refresh
+                                                with st.container():
+                                                    # Store the file path in session state to access it later
+                                                    if download_key not in st.session_state:
+                                                        st.session_state[download_key] = image_path
+                                                    
+                                                    # Create a download button that doesn't trigger a full page refresh
                                                     st.download_button(
                                                         label=f"Download Image {i+1}",
-                                                        data=image_bytes,
+                                                        data=open(st.session_state[download_key], "rb").read(),
                                                         file_name=os.path.basename(image_path),
                                                         mime="image/png",
-                                                        key=f"download_image_{story_data['_id']}_{i}"
+                                                        key=download_key,
+                                                        use_container_width=True
                                                     )
                                             except Exception as e:
                                                 st.error(f"Error preparing image {i+1} for download: {str(e)}")
