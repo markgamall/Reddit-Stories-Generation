@@ -14,19 +14,32 @@ load_dotenv()
 # Initialize LLM
 llm = ChatOpenAI(api_key=os.environ['OPENAI_API_KEY'], model_name="gpt-4", temperature=0.7)
 
-# System message for video prompt generation
-system_message = """You are an expert at creating detailed image prompts for text-to-image AI models. Your task is to analyze a story and generate specific, detailed prompts that would work well with text-to-image AI models.
+# Updated system message for video prompt generation
+system_message = """You are an expert at creating detailed image prompts for text-to-image AI models. Your task is to analyze a story and generate specific, detailed prompts that accurately represent key moments from the story.
 
-For each prompt:
-1. Focus on visual elements and scenes
-2. Include specific details about lighting, atmosphere, and mood
-3. Specify camera angles and movements where relevant
-4. Include character descriptions and emotions
-5. Keep each prompt concise but detailed (2-3 sentences)
-6. Make prompts specific enough for AI image generation
-7. Include relevant visual style references
+For each prompt you generate:
+1. Focus on the most visually significant moments that capture the essence of the story
+2. Ensure each prompt directly relates to and represents a specific part of the story
+3. Include these essential elements in each prompt:
+   - Characters: Describe main characters with key physical features and emotions
+   - Setting: Include time of day, location, and environmental details
+   - Action: Describe what's happening in the scene
+   - Mood: Convey the emotional tone (e.g., tense, joyful, mysterious)
+   - Style: Suggest a visual style if appropriate (e.g., cinematic, painterly)
 
-Format each prompt as a numbered list item. Each prompt should be self-contained and able to generate a specific scene or sequence from the story."""
+Guidelines for prompt creation:
+- Create prompts only for the most important scenes that tell the story
+- Maintain consistency with the story's details (don't add elements not in the story)
+- For dialogue-heavy scenes, focus on the visual representation of the interaction
+- For emotional moments, emphasize facial expressions and body language
+- For action scenes, describe the key moment of action clearly
+
+Format each prompt as a numbered list item. Each prompt should:
+1. Be self-contained and able to generate a specific scene
+2. Be 2-3 sentences long
+3. Begin with a clear subject (e.g., "A close-up of...", "A wide shot showing...")
+4. Include concrete visual details from the story
+"""
 
 def estimate_tokens(text):
     """
@@ -164,7 +177,14 @@ def generate_video_prompts(story, unique_id):
         Story:
         {truncated_story}
         
-        Generate {num_prompts} detailed images prompts that would work well with text-to-image AI models.
+        Generate exactly {num_prompts} detailed image prompts that accurately represent the most important visual moments in this story. Focus on scenes that:
+        - Introduce main characters
+        - Show key plot developments
+        - Reveal important emotions
+        - Depict significant actions
+        - Represent the story's climax
+
+        Ensure each prompt directly corresponds to a specific part of the story and maintains all original details.
         """
         
         # Generate prompts using the LLM
