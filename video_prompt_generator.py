@@ -17,28 +17,35 @@ llm = ChatOpenAI(api_key=os.environ['OPENAI_API_KEY'], model_name="gpt-4", tempe
 # Updated system message for video prompt generation
 system_message = """You are an expert at creating detailed image prompts for text-to-image AI models. Your task is to analyze a story and generate specific, detailed prompts that accurately represent key moments from the story.
 
-For each prompt you generate:
+Each prompt you generate must:
 1. Focus on the most visually significant moments that capture the essence of the story
-2. Ensure each prompt directly relates to and represents a specific part of the story
-3. Include these essential elements in each prompt:
-   - Characters: Describe main characters with key physical features and emotions
-   - Setting: Include time of day, location, and environmental details
-   - Action: Describe what's happening in the scene
-   - Mood: Convey the emotional tone (e.g., tense, joyful, mysterious)
-   - Style: Suggest a visual style if appropriate (e.g., cinematic, painterly)
+2. Directly relate to and visually represent a specific part of the story
+3. Maintain absolute consistency across all prompts, including:
+    - Character appearance (clothing, facial features, age, hair, expressions)
+    - Visual style (e.g., cinematic, painterly, anime — use the same across all prompts)
+    - Color palette and mood (e.g., dark and moody, warm and nostalgic — define early and keep it consistent)
+    - Environment and world design (architecture, weather, lighting — all should feel part of one coherent world)
+
+For each prompt, include these essential elements:
+- Characters: Describe main characters with key physical traits, clothing, and emotional expression. Be consistent in describing them in every prompt.
+- Setting: Include time of day, location, and environmental details. Use the same environmental logic throughout the story.
+- Action: Clearly describe what is happening in the scene, focusing on a specific moment in motion or interaction.
+- Mood: Convey the emotional tone through lighting, body language, and atmosphere. Keep the emotional palette coherent across the story's arc.
+- Style: Define and use a consistent visual style (e.g., cinematic realism, soft painterly, gritty graphic novel, 90s anime). Do not switch styles between prompts.
 
 Guidelines for prompt creation:
-- Create prompts only for the most important scenes that tell the story
-- Maintain consistency with the story's details (don't add elements not in the story)
-- For dialogue-heavy scenes, focus on the visual representation of the interaction
-- For emotional moments, emphasize facial expressions and body language
-- For action scenes, describe the key moment of action clearly
+- Only create prompts for the most important scenes that visually tell the story
+- Maintain full continuity and consistency — as if all scenes are frames from the same movie or animated short
+- For dialogue-heavy scenes, focus on facial expressions, postures, and eye contact to show emotional weight
+- For emotional scenes, emphasize body language, lighting, and framing
+- For action scenes, freeze the moment of impact or decision with dynamic detail
 
-Format each prompt as a numbered list item. Each prompt should:
-1. Be self-contained and able to generate a specific scene
-2. Be 2-3 sentences long
-3. Begin with a clear subject (e.g., "A close-up of...", "A wide shot showing...")
-4. Include concrete visual details from the story
+Prompt Format: Each prompt should:
+1. Be numbered and self-contained, describing a single scene
+2. Be 2–3 sentences long
+3. Begin with a clear visual framing (e.g., "A close-up of...", "A wide shot showing...")
+
+Include concrete visual elements from the story and follow the established tone, style, and world logic
 """
 
 def estimate_tokens(text):
@@ -126,31 +133,30 @@ def truncate_story(story, max_tokens=6000):
         logger.error(f"Story length: {len(story)} chars")
         raise
 
-def calculate_number_of_prompts(story, max_prompts=15):
+def calculate_number_of_prompts(story):
     """
     Calculate the number of prompts to generate based on story length.
     
     Args:
         story (str): The input story
-        max_prompts (int): Maximum number of prompts to generate
     
     Returns:
-        int: Number of prompts to generate
+        tuple: (num_video_prompts, num_image_prompts, total_prompts)
     """
     # Count words in the story
     word_count = len(story.split())
     
     # Calculate number of prompts based on story length ranges
     if word_count < 50:  # Extremely short stories
-        return 2  # 1 video, 1 image
+        return (1, 4, 5)
     elif 50 <= word_count <= 250:  # Very short stories
-        return 2  # 1 video, 1 image
+        return (1, 6, 7)
     elif 250 < word_count <= 1000:  # Short stories
-        return 4  # 2 videos, 1 image
+        return (2, 8, 10)
     elif 1000 < word_count <= 2500:  # Medium stories
-        return 8  # 3 videos, 5 images
+        return (3, 12, 15)
     else:  # Long stories (2500+ words)
-        return 15  # 3 videos, 12 images
+        return (3, 18, 21)
 
 def generate_video_prompts(story, unique_id):
     """
@@ -168,23 +174,30 @@ def generate_video_prompts(story, unique_id):
         truncated_story = truncate_story(story)
         
         # Calculate number of prompts dynamically
-        num_prompts = calculate_number_of_prompts(truncated_story)
+        num_video_prompts, num_image_prompts, total_prompts = calculate_number_of_prompts(truncated_story)
         
-        # Create the prompt for the LLM
+        # Create the prompt for the LLM with specific instructions
         prompt = f"""
         {system_message}
         
         Story:
         {truncated_story}
         
-        Generate exactly {num_prompts} detailed image prompts that accurately represent the most important visual moments in this story. Focus on scenes that:
-        - Introduce main characters
-        - Show key plot developments
-        - Reveal important emotions
-        - Depict significant actions
-        - Represent the story's climax
-
-        Ensure each prompt directly corresponds to a specific part of the story and maintains all original details.
+        Generate exactly {total_prompts} detailed image prompts that accurately represent the most important visual moments in this story.
+        
+        IMPORTANT INSTRUCTIONS:
+        1. The FIRST {num_video_prompts} prompts should represent the FIRST {num_video_prompts} SCENES from the story in chronological order.
+           - These will be used for video generation and must show the beginning of the story.
+           - Focus on establishing shots, character introductions, and initial plot developments.
+        
+        2. The REMAINING {num_image_prompts} prompts should represent the KEY MOMENTS from the rest of the story.
+           - These will be used for image generation and should capture pivotal scenes.
+           - Include major plot points, emotional moments, and the climax.
+        
+        Ensure all prompts:
+        - Maintain visual consistency (characters, style, setting)
+        - Are numbered sequentially
+        - Directly correspond to specific parts of the story
         """
         
         # Generate prompts using the LLM
@@ -192,11 +205,17 @@ def generate_video_prompts(story, unique_id):
         prompts = response.content.split('\n')
         
         # Clean up the prompts (remove empty lines and ensure proper formatting)
-        prompts = [p.strip() for p in prompts if p.strip()][:num_prompts]
+        clean_prompts = [p.strip() for p in prompts if p.strip()][:total_prompts]
+        
+        # Separate video and image prompts
+        video_prompts = clean_prompts[:num_video_prompts]
+        image_prompts = clean_prompts[num_video_prompts:]
         
         return {
-            'prompts': prompts,
-            'num_prompts': num_prompts
+            'video_prompts': video_prompts,
+            'image_prompts': image_prompts,
+            'num_video_prompts': num_video_prompts,
+            'num_image_prompts': num_image_prompts
         }
         
     except Exception as e:
@@ -229,7 +248,10 @@ But here's the twist: what if these aren't just stories? What if they're warning
         test_id = f"test{i}"
         result = generate_video_prompts(test_story, test_id)
         
-        print(f"Number of Prompts Generated: {result['num_prompts']}")
-        print("Prompts:")
-        for j, prompt in enumerate(result['prompts'], 1):
+        print(f"Video Prompts ({result['num_video_prompts']}):")
+        for j, prompt in enumerate(result['video_prompts'], 1):
+            print(f"{j}. {prompt}")
+        
+        print(f"\nImage Prompts ({result['num_image_prompts']}):")
+        for j, prompt in enumerate(result['image_prompts'], result['num_video_prompts'] + 1):
             print(f"{j}. {prompt}")
