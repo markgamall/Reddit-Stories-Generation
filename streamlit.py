@@ -1310,12 +1310,23 @@ else:  # Story Generation
             try:
                 output_dir = "generated_content"
                 if os.path.exists(output_dir):  
+                    # Preserve files from current session
+                    current_session_files = set()
+                    if 'generated_content' in st.session_state and st.session_state.generated_content:
+                        if st.session_state.generated_content.get('video_paths'):
+                            current_session_files.update(st.session_state.generated_content['video_paths'])
+                        if st.session_state.generated_content.get('image_paths'):
+                            current_session_files.update(st.session_state.generated_content['image_paths'])
+                        if st.session_state.get('final_video_path'):
+                            current_session_files.add(st.session_state.final_video_path)
+                    
                     # Get all files in the directory
                     for filename in os.listdir(output_dir):
                         file_path = os.path.join(output_dir, filename)
                         try:
-                            # Delete files older than 24 hours
-                            if os.path.getmtime(file_path) < time.time() - 86400:
+                            # Only delete files not from current session and older than 1 hour
+                            if (file_path not in current_session_files and 
+                                os.path.getmtime(file_path) < time.time() - 3600):  # Changed from 24h to 1h
                                 os.remove(file_path)
                         except Exception as e:
                             print(f"Error deleting {file_path}: {e}")
@@ -1328,6 +1339,15 @@ else:  # Story Generation
         # Add final_video_path to session state
         if 'final_video_path' not in st.session_state:
             st.session_state.final_video_path = None
+
+        if 'generated_content' not in st.session_state:
+            st.session_state.generated_content = {
+                'video_paths': [],
+                'image_paths': [],
+                'video_prompts': [],
+                'image_prompts': [],
+                'story_id': None
+            }
         
         # Check if a story has been selected from the View Generated Stories tab
         if 'selected_story_for_video' not in st.session_state:
@@ -1423,10 +1443,10 @@ else:  # Story Generation
                                     st.success(f"Video {i+1} generated successfully!")
                                     
                                     # Display the video immediately after generation
-                                    st.empty()  # Force streamlit to refresh display
-                                    st.markdown(f"**Generated Video {i+1}**")
-                                    st.video(output_path)
-                                    st.empty()  # Add another empty element after video
+                                    video_container = st.container()
+                                    with video_container:
+                                        st.markdown(f"**Generated Video {i+1}**")
+                                        st.video(output_path)
                                 else:
                                     st.error(f"Video {i+1} was not generated properly. File is missing or empty.")
                             except Exception as e:
@@ -1475,7 +1495,8 @@ else:  # Story Generation
                                 'story_id': story_data['_id']
                             }
                             st.success("Content generated successfully!")
-                            
+                            st.rerun()  # Add this line to force refresh
+
                             # Display download options
                             st.subheader("Download Content")
                             
@@ -1712,24 +1733,24 @@ else:  # Story Generation
                             st.success("Final video generated successfully!")
                             
                             # Force streamlit to refresh the display
-                            st.empty()
-                            st.markdown("**Final Generated Video**")
-                            st.video(final_video_path)
+                            # Replace the empty() calls with a container
+                            final_vid_container = st.container()
+                            with final_vid_container:
+                                st.markdown("**Final Generated Video**")
+                                st.video(final_video_path)
+                                
+                                # Download button
+                                with open(final_video_path, "rb") as file:
+                                    video_bytes = file.read()
+                                    st.download_button(
+                                        label="Download Final Video",
+                                        data=video_bytes,
+                                        file_name=f"final_story_video_{story_data['_id']}.mp4",
+                                        mime="video/mp4",
+                                        key="download_final_video"
+                                    )
                             
-                            # Add download button for final video
-                            with open(final_video_path, "rb") as file:
-                                video_bytes = file.read()
-                                st.download_button(
-                                    label="Download Final Video",
-                                    data=video_bytes,
-                                    file_name=f"final_story_video_{story_data['_id']}.mp4",
-                                    mime="video/mp4",
-                                    key="download_final_video"
-                                )
-                            
-                            # Force a page rerun after everything is set up
-                            st.empty()
-                            st.rerun()
+                            st.rerun()  # Keep this rerun
                         else:
                             st.error("Failed to generate final video")
                     
