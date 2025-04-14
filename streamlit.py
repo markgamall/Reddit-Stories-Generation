@@ -46,6 +46,7 @@ import atexit
 from video_generator import VideoGenerator, ImageGenerator
 from video_prompt_generator import generate_video_prompts
 from video_montage import VideoMontageGenerator
+import shutil
 
 # Load environment variables
 load_dotenv()
@@ -1668,7 +1669,11 @@ else:  # Story Generation
             
             # Add Final Video Generation section after the download options
             st.subheader("Generate Final Video")
-            
+
+            # Create permanent video storage directory
+            PERMANENT_VIDEO_DIR = "permanent_videos"
+            os.makedirs(PERMANENT_VIDEO_DIR, exist_ok=True)
+
             # Voice selection for narration
             selected_voice = st.selectbox(
                 "Select Narration Voice for Final Video",
@@ -1676,6 +1681,24 @@ else:  # Story Generation
                 index=4,  # Default to Nova
                 key="voice_selection_final_video",
             )
+
+            # Add a clear cache button
+            if st.button("Clear Cache and Refresh"):
+                if 'final_video_path' in st.session_state:
+                    del st.session_state['final_video_path']
+                if 'final_video_metadata' in st.session_state:
+                    del st.session_state['final_video_metadata']
+                st.experimental_rerun()
+
+            # Attempt to restore video path from MongoDB if not in session state
+            if story_data and '_id' in story_data:
+                if not hasattr(st.session_state, 'final_video_path') or not st.session_state.final_video_path:
+                    stored_story = generated_stories_collection.find_one({'_id': story_data['_id']})
+                    if stored_story and 'final_video_path' in stored_story:
+                        video_path = stored_story['final_video_path']
+                        if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+                            st.session_state.final_video_path = video_path
+                            print(f"Restored video path from MongoDB: {video_path}")
 
             if st.button("Generate Final Video"):
                 try:
@@ -1733,14 +1756,37 @@ else:  # Story Generation
                         
                         # Verify the video was created successfully
                         if os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
-                            # Save video path both in session state and MongoDB
-                            st.session_state.final_video_path = final_video_path
+                            # Store the absolute path, not relative
+                            st.session_state.final_video_path = os.path.abspath(final_video_path)
+                            
+                            # Add explicit logging to debug issues
+                            print(f"Video generated successfully at: {st.session_state.final_video_path}")
+                            print(f"File size: {os.path.getsize(st.session_state.final_video_path)} bytes")
+                            
+                            # Force write to disk with sync if available
+                            try:
+                                os.sync()  # Force filesystem sync
+                            except AttributeError:
+                                pass  # os.sync is not available on all platforms
+                            
+                            # Add a slightly longer delay to ensure file is fully written and accessible
+                            time.sleep(2)
+                            
+                            # Create a more permanent storage location
+                            permanent_path = f"{PERMANENT_VIDEO_DIR}/final_video_{story_data['_id']}_{timestamp}.mp4"
+                            
+                            # Copy the file to permanent storage
+                            shutil.copy2(final_video_path, permanent_path)
+                            
+                            # Update both paths
+                            st.session_state.final_video_path = permanent_path
+                            st.session_state.final_video_permanent_path = permanent_path
                             
                             # Update the story document in MongoDB with the final video path
                             generated_stories_collection.update_one(
                                 {'_id': story_data['_id']},
                                 {'$set': {
-                                    'final_video_path': final_video_path,
+                                    'final_video_path': permanent_path,
                                     'final_video_timestamp': timestamp
                                 }},
                                 upsert=True
@@ -1750,29 +1796,37 @@ else:  # Story Generation
                             st.success("Final video generated successfully!")
                             st.markdown("---")
                             st.markdown("### Final Generated Video")
-                            st.video(final_video_path)
+                            
+                            # Ensure the file is readable
+                            if os.access(permanent_path, os.R_OK):
+                                st.video(permanent_path)
+                            else:
+                                st.error(f"Video file exists but is not readable: {permanent_path}")
                             
                             # Add download button
-                            with open(final_video_path, "rb") as file:
-                                video_bytes = file.read()
-                                st.download_button(
-                                    label="Download Final Video",
-                                    data=video_bytes,
-                                    file_name=f"final_story_video_{story_data['_id']}_{timestamp}.mp4",
-                                    mime="video/mp4",
-                                    key=f"download_final_video_{timestamp}"
-                                )
+                            try:
+                                with open(permanent_path, "rb") as file:
+                                    video_bytes = file.read()
+                                    st.download_button(
+                                        label="Download Final Video",
+                                        data=video_bytes,
+                                        file_name=f"final_story_video_{story_data['_id']}_{timestamp}.mp4",
+                                        mime="video/mp4",
+                                        key=f"download_final_video_{timestamp}"
+                                    )
+                            except Exception as e:
+                                st.error(f"Error creating download button: {str(e)}")
                             
                             # Store additional metadata in session state
                             st.session_state.final_video_metadata = {
-                                'path': final_video_path,
+                                'path': permanent_path,
                                 'timestamp': timestamp,
                                 'story_id': story_data['_id'],
-                                'size': os.path.getsize(final_video_path)
+                                'size': os.path.getsize(permanent_path)
                             }
                             
                             # Force refresh to ensure new video is displayed
-                            time.sleep(1)  # Small delay to ensure file is fully written
+                            time.sleep(2)  # Increased delay to ensure file is fully written
                             st.rerun()
                         else:
                             st.error("Failed to generate final video - output file is missing or empty")
@@ -1784,35 +1838,3 @@ else:  # Story Generation
                 except Exception as e:
                     st.error(f"Error generating final video: {str(e)}")
                     log_error_to_db(str(e), "Final Video Generation Error", traceback.format_exc())
-            
-            # Show existing final video if available
-            elif st.session_state.final_video_path and os.path.exists(st.session_state.final_video_path):
-                try:
-                    video_size = os.path.getsize(st.session_state.final_video_path)
-                    if video_size > 0:
-                        st.markdown("### Previously Generated Final Video")
-                        # Try to get metadata from session state
-                        metadata = st.session_state.get('final_video_metadata', {})
-                        if metadata:
-                            st.markdown(f"Generated on: {metadata.get('timestamp', 'Unknown date')}")
-                        
-                        # Display the video
-                        st.video(st.session_state.final_video_path)
-                        
-                        # Add download button for existing video
-                        with open(st.session_state.final_video_path, "rb") as file:
-                            video_bytes = file.read()
-                            timestamp = os.path.basename(st.session_state.final_video_path).split('_')[-1].replace('.mp4', '')
-                            st.download_button(
-                                label="Download Final Video",
-                                data=video_bytes,
-                                file_name=f"final_story_video_{story_data['_id']}_{timestamp}.mp4",
-                                mime="video/mp4",
-                                key=f"download_final_video_{timestamp}"
-                            )
-                    else:
-                        st.error("Existing video file is empty - please regenerate the video")
-                        st.session_state.final_video_path = None  # Clear invalid video path
-                except Exception as e:
-                    st.error(f"Error displaying existing video: {str(e)}")
-                    st.session_state.final_video_path = None  # Clear invalid video path
