@@ -1731,32 +1731,55 @@ else:  # Story Generation
                             output_path=output_path
                         )
                         
+                        # Verify the video was created successfully
                         if os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
-                            # Update session state with new video path
+                            # Save video path both in session state and MongoDB
                             st.session_state.final_video_path = final_video_path
+                            
+                            # Update the story document in MongoDB with the final video path
+                            generated_stories_collection.update_one(
+                                {'_id': story_data['_id']},
+                                {'$set': {
+                                    'final_video_path': final_video_path,
+                                    'final_video_timestamp': timestamp
+                                }},
+                                upsert=True
+                            )
+                            
+                            # Force display the new video immediately
                             st.success("Final video generated successfully!")
+                            st.markdown("---")
+                            st.markdown("### Final Generated Video")
+                            st.video(final_video_path)
                             
-                            # Display new video in container
-                            final_vid_container = st.container()
-                            with final_vid_container:
-                                st.markdown("**Final Generated Video**")
-                                st.video(final_video_path)
-                                
-                                # Download button for new video
-                                with open(final_video_path, "rb") as file:
-                                    video_bytes = file.read()
-                                    st.download_button(
-                                        label="Download Final Video",
-                                        data=video_bytes,
-                                        file_name=f"final_story_video_{story_data['_id']}_{timestamp}.mp4",
-                                        mime="video/mp4",
-                                        key=f"download_final_video_{timestamp}"
-                                    )
+                            # Add download button
+                            with open(final_video_path, "rb") as file:
+                                video_bytes = file.read()
+                                st.download_button(
+                                    label="Download Final Video",
+                                    data=video_bytes,
+                                    file_name=f"final_story_video_{story_data['_id']}_{timestamp}.mp4",
+                                    mime="video/mp4",
+                                    key=f"download_final_video_{timestamp}"
+                                )
                             
-                            # Clear cache and force refresh
+                            # Store additional metadata in session state
+                            st.session_state.final_video_metadata = {
+                                'path': final_video_path,
+                                'timestamp': timestamp,
+                                'story_id': story_data['_id'],
+                                'size': os.path.getsize(final_video_path)
+                            }
+                            
+                            # Force refresh to ensure new video is displayed
+                            time.sleep(1)  # Small delay to ensure file is fully written
                             st.rerun()
                         else:
-                            st.error("Failed to generate final video")
+                            st.error("Failed to generate final video - output file is missing or empty")
+                            if os.path.exists(final_video_path):
+                                st.error(f"Video file exists but is empty (size: {os.path.getsize(final_video_path)} bytes)")
+                            else:
+                                st.error("Video file was not created")
                     
                 except Exception as e:
                     st.error(f"Error generating final video: {str(e)}")
@@ -1764,17 +1787,32 @@ else:  # Story Generation
             
             # Show existing final video if available
             elif st.session_state.final_video_path and os.path.exists(st.session_state.final_video_path):
-                st.subheader("Previously Generated Final Video")
-                st.video(st.session_state.final_video_path)
-                
-                # Add download button for existing final video with timestamp from filename
-                with open(st.session_state.final_video_path, "rb") as file:
-                    video_bytes = file.read()
-                    timestamp = os.path.basename(st.session_state.final_video_path).split('_')[-1].replace('.mp4', '')
-                    st.download_button(
-                        label="Download Final Video",
-                        data=video_bytes,
-                        file_name=f"final_story_video_{story_data['_id']}_{timestamp}.mp4",
-                        mime="video/mp4",
-                        key=f"download_final_video_{timestamp}"
-                    )
+                try:
+                    video_size = os.path.getsize(st.session_state.final_video_path)
+                    if video_size > 0:
+                        st.markdown("### Previously Generated Final Video")
+                        # Try to get metadata from session state
+                        metadata = st.session_state.get('final_video_metadata', {})
+                        if metadata:
+                            st.markdown(f"Generated on: {metadata.get('timestamp', 'Unknown date')}")
+                        
+                        # Display the video
+                        st.video(st.session_state.final_video_path)
+                        
+                        # Add download button for existing video
+                        with open(st.session_state.final_video_path, "rb") as file:
+                            video_bytes = file.read()
+                            timestamp = os.path.basename(st.session_state.final_video_path).split('_')[-1].replace('.mp4', '')
+                            st.download_button(
+                                label="Download Final Video",
+                                data=video_bytes,
+                                file_name=f"final_story_video_{story_data['_id']}_{timestamp}.mp4",
+                                mime="video/mp4",
+                                key=f"download_final_video_{timestamp}"
+                            )
+                    else:
+                        st.error("Existing video file is empty - please regenerate the video")
+                        st.session_state.final_video_path = None  # Clear invalid video path
+                except Exception as e:
+                    st.error(f"Error displaying existing video: {str(e)}")
+                    st.session_state.final_video_path = None  # Clear invalid video path
