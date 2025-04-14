@@ -1418,14 +1418,15 @@ else:  # Story Generation
                                     output_file_name=video_filename,
                                     model=model
                                 )
-                                # Verify the video file exists and has content
                                 if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                                     video_paths.append(output_path)
                                     st.success(f"Video {i+1} generated successfully!")
                                     
                                     # Display the video immediately after generation
+                                    st.empty()  # Force streamlit to refresh display
                                     st.markdown(f"**Generated Video {i+1}**")
                                     st.video(output_path)
+                                    st.empty()  # Add another empty element after video
                                 else:
                                     st.error(f"Video {i+1} was not generated properly. File is missing or empty.")
                             except Exception as e:
@@ -1705,12 +1706,14 @@ else:  # Story Generation
                             output_path=output_path
                         )
                         
-                        if os.path.exists(final_video_path):
-                            # Store final video path in session state
+                        if os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
+                            # Store final video path in session state and display success message
                             st.session_state.final_video_path = final_video_path
                             st.success("Final video generated successfully!")
                             
-                            # Display the final video
+                            # Force streamlit to refresh the display
+                            st.empty()
+                            st.markdown("**Final Generated Video**")
                             st.video(final_video_path)
                             
                             # Add download button for final video
@@ -1723,6 +1726,10 @@ else:  # Story Generation
                                     mime="video/mp4",
                                     key="download_final_video"
                                 )
+                            
+                            # Force a page rerun after everything is set up
+                            st.empty()
+                            st.rerun()
                         else:
                             st.error("Failed to generate final video")
                     
