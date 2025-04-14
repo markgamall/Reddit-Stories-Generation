@@ -1679,6 +1679,9 @@ else:  # Story Generation
 
             if st.button("Generate Final Video"):
                 try:
+                    # Clear existing final video path to avoid showing old video
+                    st.session_state.final_video_path = None
+                    
                     # Always regenerate audio for current story text
                     with st.spinner("Generating audio narration..."):
                         if OPENAI_VOICES[selected_voice] == "custom":
@@ -1710,10 +1713,11 @@ else:  # Story Generation
                     output_dir = "generated_content"
                     os.makedirs(output_dir, exist_ok=True)
                     
-                    # Generate final video
+                    # Generate final video with unique timestamp
                     with st.spinner("Creating final video montage..."):
                         montage_generator = VideoMontageGenerator()
-                        output_path = f"{output_dir}/final_video_{story_data['_id']}.mp4"
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        output_path = f"{output_dir}/final_video_{story_data['_id']}_{timestamp}.mp4"
                         
                         # Combine video and image prompts
                         all_prompts = video_prompts + image_prompts
@@ -1728,29 +1732,29 @@ else:  # Story Generation
                         )
                         
                         if os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
-                            # Store final video path in session state and display success message
+                            # Update session state with new video path
                             st.session_state.final_video_path = final_video_path
                             st.success("Final video generated successfully!")
                             
-                            # Force streamlit to refresh the display
-                            # Replace the empty() calls with a container
+                            # Display new video in container
                             final_vid_container = st.container()
                             with final_vid_container:
                                 st.markdown("**Final Generated Video**")
                                 st.video(final_video_path)
                                 
-                                # Download button
+                                # Download button for new video
                                 with open(final_video_path, "rb") as file:
                                     video_bytes = file.read()
                                     st.download_button(
                                         label="Download Final Video",
                                         data=video_bytes,
-                                        file_name=f"final_story_video_{story_data['_id']}.mp4",
+                                        file_name=f"final_story_video_{story_data['_id']}_{timestamp}.mp4",
                                         mime="video/mp4",
-                                        key="download_final_video"
+                                        key=f"download_final_video_{timestamp}"
                                     )
                             
-                            st.rerun()  # Keep this rerun
+                            # Clear cache and force refresh
+                            st.rerun()
                         else:
                             st.error("Failed to generate final video")
                     
@@ -1763,13 +1767,14 @@ else:  # Story Generation
                 st.subheader("Previously Generated Final Video")
                 st.video(st.session_state.final_video_path)
                 
-                # Add download button for existing final video
+                # Add download button for existing final video with timestamp from filename
                 with open(st.session_state.final_video_path, "rb") as file:
                     video_bytes = file.read()
+                    timestamp = os.path.basename(st.session_state.final_video_path).split('_')[-1].replace('.mp4', '')
                     st.download_button(
                         label="Download Final Video",
                         data=video_bytes,
-                        file_name=f"final_story_video_{story_data['_id']}.mp4",
+                        file_name=f"final_story_video_{story_data['_id']}_{timestamp}.mp4",
                         mime="video/mp4",
-                        key="download_final_video"
+                        key=f"download_final_video_{timestamp}"
                     )
