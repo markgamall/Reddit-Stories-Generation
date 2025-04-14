@@ -47,6 +47,24 @@ from video_generator import VideoGenerator, ImageGenerator
 from video_prompt_generator import generate_video_prompts
 from video_montage import VideoMontageGenerator
 
+# Initialize session state variables at the top level
+if 'generated_content' not in st.session_state:
+    st.session_state.generated_content = {
+        'video_paths': None,
+        'image_paths': [],
+        'prompts': None
+    }
+if 'final_video_path' not in st.session_state:
+    st.session_state.final_video_path = None
+if 'selected_story_for_video' not in st.session_state:
+    st.session_state.selected_story_for_video = None
+if 'current_video_story_id' not in st.session_state:
+    st.session_state.current_video_story_id = None
+if 'generated_audio_path' not in st.session_state:
+    st.session_state.generated_audio_path = None
+if 'page' not in st.session_state:
+    st.session_state.page = "Reddit Stories"
+
 # Load environment variables
 load_dotenv()
 openai_client = openai.OpenAI(api_key=os.environ['OPENAI_API_KEY'])
@@ -72,8 +90,6 @@ if 'story_saved' not in st.session_state:
     st.session_state.story_saved = False
 if 'current_story_title' not in st.session_state:
     st.session_state.current_story_title = None
-if 'page' not in st.session_state:
-    st.session_state.page = "Reddit Stories"
 if 'error_handler_initialized' not in st.session_state:
     st.session_state.error_handler_initialized = False
 
@@ -947,8 +963,6 @@ else:  # Story Generation
             # Store generated content in session state
             if 'generated_story_text' not in st.session_state:
                 st.session_state.generated_story_text = None
-            if 'generated_audio_path' not in st.session_state:
-                st.session_state.generated_audio_path = None
             if 'generation_result' not in st.session_state:
                 st.session_state.generation_result = None
                 
@@ -1306,28 +1320,36 @@ else:  # Story Generation
         
         # Initialize cleanup function
         def cleanup_old_content():
-            """Clean up old generated content files"""
+            """Clean up old generated content files while preserving important files"""
             try:
                 output_dir = "generated_content"
-                if os.path.exists(output_dir):  
+                if os.path.exists(output_dir):
+                    current_time = time.time()
                     # Get all files in the directory
                     for filename in os.listdir(output_dir):
                         file_path = os.path.join(output_dir, filename)
                         try:
-                            # Delete files older than 24 hours
-                            if os.path.getmtime(file_path) < time.time() - 86400:
+                            # Skip directories
+                            if os.path.isdir(file_path):
+                                continue
+                                
+                            # Skip final videos and those referenced in session state
+                            if ('final_video' in filename or 
+                                (hasattr(st.session_state, 'generated_content') and 
+                                 st.session_state.generated_content and
+                                 any(filename in path for path in st.session_state.generated_content.get('video_paths', [])))):
+                                continue
+                                
+                            # Only delete temp files older than 24 hours
+                            if os.path.getmtime(file_path) < current_time - 86400:
                                 os.remove(file_path)
                         except Exception as e:
-                            print(f"Error deleting {file_path}: {e}")
+                            print(f"Error processing {file_path}: {e}")
             except Exception as e:
                 print(f"Error in cleanup: {e}")
 
         # Run cleanup at the start of the tab
         cleanup_old_content()
-        
-        # Add final_video_path to session state
-        if 'final_video_path' not in st.session_state:
-            st.session_state.final_video_path = None
         
         # Check if a story has been selected from the View Generated Stories tab
         if 'selected_story_for_video' not in st.session_state:
@@ -1340,10 +1362,6 @@ else:  # Story Generation
             """)
         else:
             story_data = st.session_state.selected_story_for_video
-            
-            # Add story_id to session state for tracking story changes
-            if 'current_video_story_id' not in st.session_state:
-                st.session_state.current_video_story_id = None
             
             # Reset audio path if story changed
             if st.session_state.current_video_story_id != story_data['_id']:
@@ -1372,14 +1390,6 @@ else:  # Story Generation
                 options=["16:9", "4:3", "1:1"],
                 help="Select the aspect ratio for generated images"
             )
-            
-            # Initialize session state for generated content if not exists
-            if 'generated_content' not in st.session_state:
-                st.session_state.generated_content = {
-                    'video_paths': None,
-                    'image_paths': [],
-                    'prompts': None
-                }
             
             # Single button to generate both video and images
             if st.button("Generate Video and Images"):

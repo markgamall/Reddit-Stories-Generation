@@ -100,6 +100,19 @@ class ImageGenerator:
         except Exception as e:
             raise Exception(f"Error in image generation: {str(e)}")
 
+def ensure_output_directory():
+    """Create and ensure the output directory exists and is writable"""
+    output_dir = "generated_content"
+    media_dir = os.path.join(output_dir, "media")
+    
+    # Create main output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Create media subdirectory
+    os.makedirs(media_dir, exist_ok=True)
+    
+    return output_dir, media_dir
+
 class VideoGenerator:
     def __init__(self):
         self.api_key = os.getenv('HAILUO_API_KEY')
@@ -167,6 +180,16 @@ class VideoGenerator:
     def generate_video(self, prompt: str, output_file_name: str, model: str = "T2V-01"):
         """Complete video generation process"""
         try:
+            # Ensure output directory exists
+            output_dir, _ = ensure_output_directory()
+            
+            # Ensure the output path is absolute
+            if not os.path.isabs(output_file_name):
+                output_file_name = os.path.join(output_dir, output_file_name)
+            
+            # Create parent directory if it doesn't exist
+            os.makedirs(os.path.dirname(output_file_name), exist_ok=True)
+            
             # Submit the generation task
             task_id = self.invoke_video_generation(prompt, model)
             print("-----------------Video generation task submitted-----------------")
@@ -186,4 +209,4 @@ class VideoGenerator:
                     raise Exception(f"Video generation failed with status: {status}")
 
         except Exception as e:
-            raise Exception(f"Error in video generation: {str(e)}") 
+            raise Exception(f"Error in video generation: {str(e)}")
