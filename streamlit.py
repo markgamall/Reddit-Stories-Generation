@@ -1799,11 +1799,18 @@ else:  # Story Generation
                             
                             # Ensure the file is readable
                             if os.access(permanent_path, os.R_OK):
-                                st.video(permanent_path)
+                                # Add a small delay to ensure the file is fully written
+                                time.sleep(1)
+                                try:
+                                    # Display video with error catching
+                                    st.video(permanent_path, format="video/mp4")
+                                except Exception as e:
+                                    st.error(f"Error displaying video: {str(e)}")
+                                    print(f"Video display error: {str(e)}")
                             else:
                                 st.error(f"Video file exists but is not readable: {permanent_path}")
                             
-                            # Add download button
+                            # Add download button with error handling
                             try:
                                 with open(permanent_path, "rb") as file:
                                     video_bytes = file.read()
@@ -1825,9 +1832,6 @@ else:  # Story Generation
                                 'size': os.path.getsize(permanent_path)
                             }
                             
-                            # Force refresh to ensure new video is displayed
-                            time.sleep(2)  # Increased delay to ensure file is fully written
-                            st.rerun()
                         else:
                             st.error("Failed to generate final video - output file is missing or empty")
                             if os.path.exists(final_video_path):
