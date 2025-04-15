@@ -1340,6 +1340,8 @@ else:  # Story Generation
         # Add final_video_path to session state
         if 'final_video_path' not in st.session_state:
             st.session_state.final_video_path = None
+        if 'final_video_metadata' not in st.session_state:
+            st.session_state.final_video_metadata = None
 
         if 'generated_content' not in st.session_state:
             st.session_state.generated_content = {
@@ -1690,15 +1692,39 @@ else:  # Story Generation
                     del st.session_state['final_video_metadata']
                 st.experimental_rerun()
 
+            # Display previously generated final video if it exists
+            if ('final_video_path' in st.session_state and 
+                st.session_state.final_video_path and 
+                os.path.exists(st.session_state.final_video_path) and 
+                os.path.getsize(st.session_state.final_video_path) > 0):
+                
+                st.markdown("### Previously Generated Final Video")
+                try:
+                    st.video(st.session_state.final_video_path)
+                    
+                    # Add download button for existing video
+                    with open(st.session_state.final_video_path, "rb") as file:
+                        video_bytes = file.read()
+                        st.download_button(
+                            label="Download Final Video",
+                            data=video_bytes,
+                            file_name=f"final_story_video_{story_data['_id']}.mp4",
+                            mime="video/mp4",
+                            key=f"download_existing_final_video"
+                        )
+                except Exception as e:
+                    st.error(f"Error displaying existing video: {str(e)}")
+                    print(f"Error displaying existing video: {str(e)}")
+
             # Attempt to restore video path from MongoDB if not in session state
             if story_data and '_id' in story_data:
-                if not hasattr(st.session_state, 'final_video_path') or not st.session_state.final_video_path:
+                if not st.session_state.final_video_path:
                     stored_story = generated_stories_collection.find_one({'_id': story_data['_id']})
                     if stored_story and 'final_video_path' in stored_story:
                         video_path = stored_story['final_video_path']
                         if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
                             st.session_state.final_video_path = video_path
-                            print(f"Restored video path from MongoDB: {video_path}")
+                            st.experimental_rerun()  # Refresh to show the restored video
 
             if st.button("Generate Final Video"):
                 try:
@@ -1756,6 +1782,9 @@ else:  # Story Generation
                         
                         # Verify the video was created successfully
                         if os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
+                            # Create a container for the video display
+                            video_container = st.empty()
+                            
                             # Store the absolute path, not relative
                             st.session_state.final_video_path = os.path.abspath(final_video_path)
                             
@@ -1795,20 +1824,18 @@ else:  # Story Generation
                             # Force display the new video immediately
                             st.success("Final video generated successfully!")
                             st.markdown("---")
-                            st.markdown("### Final Generated Video")
                             
-                            # Ensure the file is readable
-                            if os.access(permanent_path, os.R_OK):
-                                # Add a small delay to ensure the file is fully written
-                                time.sleep(1)
-                                try:
-                                    # Display video with error catching
-                                    st.video(permanent_path, format="video/mp4")
-                                except Exception as e:
-                                    st.error(f"Error displaying video: {str(e)}")
-                                    print(f"Video display error: {str(e)}")
-                            else:
-                                st.error(f"Video file exists but is not readable: {permanent_path}")
+                            # Use the container to display the video
+                            with video_container:
+                                st.markdown("### Final Generated Video")
+                                if os.access(permanent_path, os.R_OK):
+                                    try:
+                                        st.video(permanent_path)
+                                    except Exception as e:
+                                        st.error(f"Error displaying video: {str(e)}")
+                                        print(f"Video display error: {str(e)}")
+                                else:
+                                    st.error(f"Video file exists but is not readable: {permanent_path}")
                             
                             # Add download button with error handling
                             try:
@@ -1832,13 +1859,16 @@ else:  # Story Generation
                                 'size': os.path.getsize(permanent_path)
                             }
                             
+                            # Force a rerun to ensure the video is displayed
+                            st.experimental_rerun()
+                        
                         else:
                             st.error("Failed to generate final video - output file is missing or empty")
                             if os.path.exists(final_video_path):
                                 st.error(f"Video file exists but is empty (size: {os.path.getsize(final_video_path)} bytes)")
                             else:
                                 st.error("Video file was not created")
-                    
+                
                 except Exception as e:
                     st.error(f"Error generating final video: {str(e)}")
                     log_error_to_db(str(e), "Final Video Generation Error", traceback.format_exc())
