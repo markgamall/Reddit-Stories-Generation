@@ -1686,11 +1686,18 @@ else:  # Story Generation
 
             # Add a clear cache button
             if st.button("Clear Cache and Refresh"):
+                # Clear session state variables for final video
                 if 'final_video_path' in st.session_state:
-                    del st.session_state['final_video_path']
+                    del st.session_state.final_video_path
                 if 'final_video_metadata' in st.session_state:
-                    del st.session_state['final_video_metadata']
-                st.experimental_rerun()
+                    del st.session_state.final_video_metadata
+                
+                # Clear Streamlit's internal cache
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                
+                # Use the modern rerun command
+                st.rerun()
 
             # Display previously generated final video if it exists
             if ('final_video_path' in st.session_state and 
