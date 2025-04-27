@@ -1307,7 +1307,7 @@ else:  # Story Generation
 
     # Tab 4: Video and Image Generation
     with tab4:
-        st.header("Video and Image Generationnnn")
+        st.header("Video and Image Generation")
         
         # Initialize cleanup function
         def cleanup_old_content():
