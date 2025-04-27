@@ -131,13 +131,10 @@ class VideoMontageGenerator:
         for chunk in chunks:
             chunk_text = chunk["chunk"]
             prompt = chunk["image"]
-            is_video = False
+            prompt_index = chunk.get("prompt_index", -1)  # Get the original prompt index
             
-            # Check if this is a video prompt (one of the first k sentences)
-            for i, video_prompt in enumerate(prompts[:video_segment_count]):
-                if prompt == video_prompt:
-                    is_video = True
-                    break
+            # Determine if this is a video prompt based on the prompt_index
+            is_video = prompt_index < video_segment_count
             
             # Calculate timing for this chunk
             chunk_words = chunk_text.split()
@@ -166,7 +163,7 @@ class VideoMontageGenerator:
                 
             actual_duration = end_time - start_time
             
-            # Add segment
+            # Add segment with the correct prompt_index
             group_segments.append({
                 "text": chunk_text,
                 "prompt": prompt,
@@ -177,10 +174,14 @@ class VideoMontageGenerator:
                 "end_time": end_time,
                 "start_char": chunk_start_pos,
                 "end_char": chunk_start_pos + len(chunk_text),
-                "word_count": word_count
+                "word_count": word_count,
+                "prompt_index": prompt_index  # Store the original prompt index
             })
             
             current_position = chunk_start_pos + len(chunk_text)
+        
+        # Sort segments by start time to ensure proper ordering
+        group_segments.sort(key=lambda x: x.get("start_time", 0))
         
         # Log final segment count
         video_segments = sum(1 for segment in group_segments if segment.get("is_video", False))
@@ -211,7 +212,8 @@ class VideoMontageGenerator:
             if i < len(all_sentences):
                 chunks.append({
                     "chunk": all_sentences[i],
-                    "image": prompt
+                    "image": prompt,
+                    "prompt_index": i  # Store original prompt index for video prompts
                 })
         
         # If no image prompts, return just the video chunks
@@ -227,7 +229,7 @@ class VideoMontageGenerator:
         
         Your task is:
         
-        1. You will receive a story text along with a list of image generation prompts.
+        1. You will receive a story text along with a LIST OF NUMBERED IMAGE GENERATION PROMPTS.
         
         2. Your goal is to chunk the story based on the following exact rules:
         
@@ -255,16 +257,25 @@ class VideoMontageGenerator:
         
         - An "image" field: The associated image prompt (copy the full prompt text exactly).
         
-        4. Format your final output as a JSON list where each element has two fields: "chunk" and "image".
+        - An "prompt_index" field: THE ORIGINAL NUMBER OF THE PROMPT (0-indexed) as it appears in the list I provide.
         
-        Be extremely careful and precise.
+        4. Format your final output as a JSON list where each element has three fields: "chunk", "image", and "prompt_index".
+        
+        Be extremely careful and precise with the prompt_index field - it must match the exact index of the prompt as given in my list.
         """
         
         try:
+            # Create the numbered image prompts
+            numbered_image_prompts = []
+            for idx, prompt in enumerate(image_prompts):
+                # Use video_prompt_count as offset to get the original index in the full prompts list
+                original_idx = idx + video_prompt_count
+                numbered_image_prompts.append(f"Prompt #{original_idx}: {prompt}")
+            
             # Call ChatGPT to chunk the story
             messages = [
                 {"role": "system", "content": system_message},
-                {"role": "user", "content": f"Story text: {remaining_story}\n\nImage prompts: {json.dumps(image_prompts)}"}
+                {"role": "user", "content": f"Story text: {remaining_story}\n\nNumbered image prompts: {json.dumps(numbered_image_prompts)}"}
             ]
             
             response = self.openai_client.chat.completions.create(
@@ -286,8 +297,23 @@ class VideoMontageGenerator:
             # Parse the JSON response
             image_chunks = json.loads(response_text)
             
-            # Merge chunks with the same image prompt
-            image_chunks = self._merge_chunks_by_image(image_chunks)
+            # Validate the prompt_index in each chunk to ensure it's within range
+            for chunk in image_chunks:
+                if "prompt_index" not in chunk:
+                    # If no prompt_index, try to match it based on the image text
+                    for idx, prompt in enumerate(image_prompts):
+                        if chunk["image"] == prompt:
+                            chunk["prompt_index"] = idx + video_prompt_count
+                            break
+                    else:
+                        # Default to the first image prompt if no match found
+                        chunk["prompt_index"] = video_prompt_count
+                else:
+                    # Ensure prompt_index is within valid range
+                    chunk["prompt_index"] = max(video_prompt_count, min(len(prompts) - 1, chunk["prompt_index"]))
+            
+            # Sort chunks by their prompt_index to maintain order
+            image_chunks.sort(key=lambda x: x.get("prompt_index", video_prompt_count))
             
             # Combine video chunks and image chunks
             chunks.extend(image_chunks)
@@ -310,7 +336,8 @@ class VideoMontageGenerator:
                     chunk_text = ' '.join(remaining_sentences[start_idx:end_idx])
                     chunks.append({
                         "chunk": chunk_text,
-                        "image": prompt
+                        "image": prompt,
+                        "prompt_index": i + video_prompt_count  # Store original prompt index
                     })
             
             return chunks
@@ -322,14 +349,21 @@ class VideoMontageGenerator:
         for item in json_list:
             image = item["image"]
             chunk = item["chunk"]
+            prompt_index = item.get("prompt_index", 0)  # Get prompt_index, default to 0
             
             if image not in merged:
-                merged[image] = chunk
+                merged[image] = {"chunk": chunk, "prompt_index": prompt_index}
             else:
-                merged[image] += " " + chunk  # Add a space between merged chunks
+                merged[image]["chunk"] += " " + chunk  # Add a space between merged chunks
         
         # Convert the merged dictionary back to a list of dictionaries
-        merged_list = [{"chunk": chunk, "image": image} for image, chunk in merged.items()]
+        merged_list = [
+            {"chunk": data["chunk"], "image": image, "prompt_index": data["prompt_index"]} 
+            for image, data in merged.items()
+        ]
+        
+        # Sort by prompt_index to maintain original order
+        merged_list.sort(key=lambda x: x.get("prompt_index", 0))
         
         return merged_list
 
@@ -611,13 +645,17 @@ class VideoMontageGenerator:
         image_count = 1
         
         # Display each segment with highlighting and timing information
-        for i, segment in enumerate(sorted_segments):
+        for segment in sorted_segments:
             segment_text = segment.get("text", "")
             segment_prompt = segment.get("prompt", "No prompt available")
             start_time = segment.get("start_time", 0)
             end_time = segment.get("end_time", 0)
             duration = end_time - start_time
             is_video = segment.get("is_video", False)
+            prompt_index = segment.get("prompt_index", -1)  # Get original prompt index if available
+            
+            # Use prompt_index + 1 to get the 1-indexed prompt number
+            prompt_number = prompt_index + 1 if prompt_index >= 0 else "unknown"
             
             # Determine segment type and number
             if is_video:
@@ -636,8 +674,8 @@ class VideoMontageGenerator:
                 color_text = "\033[33m"
             
             # Create a highlighted display of this segment with ANSI colors
-            # Use the original segment index (i+1) to ensure prompt numbers match the original prompt list
-            print(f"\n{color_code}[{segment_type} {segment_number} (Prompt {i+1})] {start_time:.2f}s - {end_time:.2f}s (Duration: {duration:.2f}s)\033[0m")
+            # Use the prompt_number to ensure prompt numbers match the original prompt list
+            print(f"\n{color_code}[{segment_type} {segment_number} (Prompt {prompt_number})] {start_time:.2f}s - {end_time:.2f}s (Duration: {duration:.2f}s)\033[0m")
             print(f"{color_code}Prompt: {segment_prompt[:100]}{'...' if len(segment_prompt) > 100 else ''}\033[0m")
             print(color_text + "-" * 80 + "\033[0m")
             print(f"{color_text}Text:\n{segment_text}\033[0m")
@@ -658,6 +696,10 @@ class VideoMontageGenerator:
             start_time = segment.get("start_time", 0)
             end_time = segment.get("end_time", 0)
             is_video = segment.get("is_video", False)
+            prompt_index = segment.get("prompt_index", -1)
+            
+            # Get the 1-indexed prompt number
+            prompt_number = prompt_index + 1 if prompt_index >= 0 else "unknown"
             
             # Determine segment type and number
             if is_video:
@@ -673,11 +715,8 @@ class VideoMontageGenerator:
                 color_code = "\033[1;33m"
                 color_text = "\033[33m"
             
-            # Get the original prompt index
-            segment_index = sorted_segments.index(segment) + 1
-            
-            # Add segment marker and text with original prompt index
-            full_story += f"{color_code}[{segment_type} {segment_number} (Prompt {segment_index}) - {start_time:.2f}s]\033[0m {color_text}{segment_text}\033[0m {color_code}[/{start_time:.2f}-{end_time:.2f}s]\033[0m \n\n"
+            # Add segment marker and text with prompt number
+            full_story += f"{color_code}[{segment_type} {segment_number} (Prompt {prompt_number}) - {start_time:.2f}s]\033[0m {color_text}{segment_text}\033[0m {color_code}[/{start_time:.2f}-{end_time:.2f}s]\033[0m \n\n"
         
         print(full_story)
         print("=" * 80 + "\n")
@@ -697,6 +736,10 @@ class VideoMontageGenerator:
             start_time = segment.get("start_time", 0)
             end_time = segment.get("end_time", 0)
             is_video = segment.get("is_video", False)
+            prompt_index = segment.get("prompt_index", -1)
+            
+            # Get the 1-indexed prompt number
+            prompt_number = prompt_index + 1 if prompt_index >= 0 else "unknown"
             
             # Determine segment type and number
             if is_video:
@@ -708,9 +751,7 @@ class VideoMontageGenerator:
                 segment_number = image_count
                 image_count += 1
                 
-            # Include the original prompt index to ensure consistency with the logs
-            segment_index = sorted_segments.index(segment) + 1
-            plain_story += f"[{segment_type} {segment_number} (Prompt {segment_index})]\nPrompt: {segment_prompt[:100]}{'...' if len(segment_prompt) > 100 else ''}\nTiming: {start_time:.2f}s to {end_time:.2f}s\nText: {segment_text}\n\n"
+            plain_story += f"[{segment_type} {segment_number} (Prompt {prompt_number})]\nPrompt: {segment_prompt[:100]}{'...' if len(segment_prompt) > 100 else ''}\nTiming: {start_time:.2f}s to {end_time:.2f}s\nText: {segment_text}\n\n"
         
         print(plain_story)
         print("-" * 80 + "\n")
