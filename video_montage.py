@@ -272,7 +272,7 @@ class VideoMontageGenerator:
             import re
             json_match = re.search(r'\[\s*{.*}\s*\]', response_text, re.DOTALL)
             if json_match:
-                response_text = json_match.group(0)
+                response_text = json_match.group(0)  
             
             # Parse the JSON response
             image_chunks = json.loads(response_text)
