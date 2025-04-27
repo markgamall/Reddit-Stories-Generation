@@ -909,7 +909,7 @@ class VideoMontageGenerator:
             # Sort segments by start time
             sorted_segments = sorted(segment_timing_info, key=lambda x: x.get("start_time", 0))
             
-            # We'll create a sequence of video chunks that exactly match our timing needss
+            # We'll create a sequence of video chunks that exactly match our timing needssss
             chunks = []
             current_time = 0
             
