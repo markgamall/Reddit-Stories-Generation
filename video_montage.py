@@ -323,13 +323,13 @@ class VideoMontageGenerator:
         return merged_list
 
     def create_montage(self, 
-                      story_text: str,
-                      audio_path: str,
-                      video_paths: List[str],
-                      image_paths: List[str],
-                      prompts: List[str],
-                      first_k_sentences: List[str],
-                      output_path: str) -> str:
+                  story_text: str,
+                  audio_path: str,
+                  video_paths: List[str],
+                  image_paths: List[str],
+                  prompts: List[str],
+                  first_k_sentences: List[str],
+                  output_path: str) -> str:
         """Create synchronized video montage with precise timing"""
         try:
             self.clean_temp_files()
@@ -376,11 +376,7 @@ class VideoMontageGenerator:
             
             # Analyze text segments with timing information using the first k sentences
             # This will ensure exact matching between prompts and segments
-            visual_segments = self.analyze_text_segments(story_text, first_k_sentences, prompts, total_duration)
-            
-            # Prepare video parts with precise timing
-            video_parts = []
-            total_video_duration = 0
+            visual_segments = self.analyze_text_segments(story_text, first_k_sentences, prompts, total_duration, audio_path)
             
             # Count actual video and image segments
             video_segment_count = sum(1 for segment in visual_segments if segment.get("is_video", False))
@@ -397,6 +393,7 @@ class VideoMontageGenerator:
             
             # Create a list to track segment timing information for final assembly
             segment_timing_info = []
+            video_parts = []
             
             for i, segment in enumerate(visual_segments):
                 output_segment = f"{self.temp_dir}/segment_{i}.mp4"
@@ -457,22 +454,20 @@ class VideoMontageGenerator:
                     "is_video": is_video
                 })
                 
-                total_video_duration += actual_duration
                 video_parts.append(output_segment)
             
             # Log total durations before concatenation
             logger.info(f"Total audio duration: {total_duration:.3f}s")
-            logger.info(f"Total video duration: {total_video_duration:.3f}s")
             logger.info(f"Video segments used: {video_index}")
             logger.info(f"Image segments used: {image_index}")
             
-            # Concatenate with precise timing using segment timing information
-            self._concatenate_videos(video_parts, audio_path, output_path, segment_timing_info)
+            # Use the new frame-perfect concatenation method for 100% accurate synchronization
+            self._concatenate_videos_frame_perfect(video_parts, audio_path, output_path, segment_timing_info)
             
             # Verify final output
             final_duration = self.get_video_duration(output_path)
             logger.info(f"Final video duration: {final_duration:.3f}s")
-            logger.info(f"Audio-visual synchronization complete with precise timing")
+            logger.info(f"Frame-perfect audio-visual synchronization complete")
             
             # Display the full story text with segment information
             self._display_story_text_with_segments(segment_timing_info)
