@@ -777,7 +777,7 @@ class VideoMontageGenerator:
             logger.error(f"Error in _image_to_video: {str(e)}")
             raise
 
-    def _concatenate_videos(self, video_parts: List[str], audio_path: str, output_path: str, segment_timing_info=None):
+    def _concatenate_videos_frame_perfect(self, video_parts: List[str], audio_path: str, output_path: str, segment_timing_info=None):
         """Concatenate videos with precise timing and audio sync using segment timing information"""
         try:
             if not video_parts:
