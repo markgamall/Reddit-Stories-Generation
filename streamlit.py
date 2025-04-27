@@ -68,6 +68,10 @@ generated_stories_collection = db['generated_stories']
 youtube_transcriptions_collection = db['youtube_transcriptions']
 fs = GridFS(db)
 
+# Define important directories
+PERMANENT_VIDEO_DIR = "permanent_videos"
+os.makedirs(PERMANENT_VIDEO_DIR, exist_ok=True)
+
 # Initialize session state variables if they don't exist
 if 'story_saved' not in st.session_state:
     st.session_state.story_saved = False
@@ -1327,7 +1331,7 @@ else:  # Story Generation
                         try:
                             # Only delete files not from current session and older than 1 hour
                             if (file_path not in current_session_files and 
-                                os.path.getmtime(file_path) < time.time() - 3600):  # Changed from 24h to 1h
+                                os.path.getmtime(file_path) < time.time() - 10800):  # Changed from 24h to 1h
                                 os.remove(file_path)
                         except Exception as e:
                             print(f"Error deleting {file_path}: {e}")
@@ -1707,21 +1711,29 @@ else:  # Story Generation
                 
                 st.markdown("### Previously Generated Final Video")
                 try:
-                    st.video(st.session_state.final_video_path)
-                    
-                    # Add download button for existing video
+                    # Read the video file as bytes for more reliable display
                     with open(st.session_state.final_video_path, "rb") as file:
                         video_bytes = file.read()
-                        st.download_button(
-                            label="Download Final Video",
-                            data=video_bytes,
-                            file_name=f"final_story_video_{story_data['_id']}.mp4",
-                            mime="video/mp4",
-                            key=f"download_existing_final_video"
-                        )
+                        st.video(video_bytes)
+                        print(f"Successfully displayed existing video from bytes: {st.session_state.final_video_path}")
+                    
+                    # Add download button for existing video (reuse the already read bytes)
+                    st.download_button(
+                        label="Download Final Video",
+                        data=video_bytes,
+                        file_name=f"final_story_video_{story_data['_id']}.mp4",
+                        mime="video/mp4",
+                        key=f"download_existing_final_video"
+                    )
                 except Exception as e:
                     st.error(f"Error displaying existing video: {str(e)}")
                     print(f"Error displaying existing video: {str(e)}")
+                    # Fallback to direct path as last resort
+                    try:
+                        st.video(st.session_state.final_video_path)
+                        print(f"Fallback: displayed existing video using direct path: {st.session_state.final_video_path}")
+                    except Exception as e2:
+                        print(f"Fallback for existing video also failed: {str(e2)}")"}]}}}
 
             # Attempt to restore video path from MongoDB if not in session state
             if story_data and '_id' in story_data:
@@ -1765,7 +1777,7 @@ else:  # Story Generation
                         st.error("No videos or images available. Please generate content first.")
                         st.stop()
                     
-                    # Create output directory if it doesn't exist
+                    # Create output directories if they don't exist
                     output_dir = "generated_content"
                     os.makedirs(output_dir, exist_ok=True)
                     
@@ -1816,8 +1828,16 @@ else:  # Story Generation
                             # Create a more permanent storage location
                             permanent_path = f"{PERMANENT_VIDEO_DIR}/final_video_{story_data['_id']}_{timestamp}.mp4"
                             
-                            # Copy the file to permanent storage
+                            # Copy the file to permanent storage and ensure proper permissions
                             shutil.copy2(final_video_path, permanent_path)
+                            
+                            # Ensure the file has proper permissions for web access
+                            try:
+                                # Make the file readable by everyone (important for web server access)
+                                os.chmod(permanent_path, 0o644)
+                                print(f"Set permissions on {permanent_path}")
+                            except Exception as perm_error:
+                                print(f"Could not set permissions: {str(perm_error)}")
                             
                             # Update both paths
                             st.session_state.final_video_path = permanent_path
@@ -1840,14 +1860,26 @@ else:  # Story Generation
                             # Use the container to display the video
                             with video_container:
                                 st.markdown("### Final Generated Video")
-                                if os.access(permanent_path, os.R_OK):
+                                if os.path.exists(permanent_path) and os.path.getsize(permanent_path) > 0:
                                     try:
-                                        st.video(permanent_path)
+                                        # Use a relative path for better compatibility with deployed environments
+                                        rel_path = os.path.relpath(permanent_path)
+                                        # Open and read the file directly to ensure it's accessible
+                                        with open(permanent_path, "rb") as video_file:
+                                            video_bytes = video_file.read()
+                                            st.video(video_bytes)
+                                        print(f"Successfully displayed video from bytes: {permanent_path}")
                                     except Exception as e:
                                         st.error(f"Error displaying video: {str(e)}")
                                         print(f"Video display error: {str(e)}")
+                                        # Fallback to direct path as last resort
+                                        try:
+                                            st.video(permanent_path)
+                                            print(f"Fallback: displayed video using direct path: {permanent_path}")
+                                        except Exception as e2:
+                                            print(f"Fallback also failed: {str(e2)}")
                                 else:
-                                    st.error(f"Video file exists but is not readable: {permanent_path}")
+                                    st.error(f"Video file doesn't exist or is empty: {permanent_path}")
                             
                             # Add download button with error handling
                             try:
