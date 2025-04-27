@@ -77,28 +77,17 @@ class VideoMontageGenerator:
         # Try to use forced alignment if audio path is provided
         if audio_path is not None:
             try:
-                logger.info("Using OpenAI Whisper API for transcription with word timestamps")
-                with open(audio_path, "rb") as audio_file:
-                    response = self.openai_client.audio.transcriptions.create(
-                        model="whisper-1",
-                        file=audio_file,
-                        response_format="verbose_json",
-                        timestamp_granularities=["word"]
-                    )
-                
-                # Process word timestamps from OpenAI response
-                if hasattr(response, 'words') and response.words:
-                    for word_data in response.words:
-                        word = word_data.word.strip()
-                        start = word_data.start
-                        end = word_data.end
-                        word_timings.append((word, start, end-start))
-                        word_to_time[word] = (start, end)
-                    logger.info(f"Successfully extracted {len(word_timings)} word timings from OpenAI Whisper API")
-                else:
-                    logger.warning("OpenAI Whisper API did not return word timestamps")
+                from transformers import pipeline
+                asr = pipeline('automatic-speech-recognition', model='openai/whisper-large-v2', device=-1, return_timestamps='word')
+                result = asr(audio_path)
+                for chunk in result['chunks']:
+                    word = chunk['text'].strip()
+                    start = chunk['timestamp'][0]
+                    end = chunk['timestamp'][1]
+                    word_timings.append((word, start, end-start))
+                    word_to_time[word] = (start, end)
             except Exception as e:
-                logger.warning(f"OpenAI Whisper API error: {e}, falling back to estimation.")
+                logger.warning(f"ASR forced alignment failed: {e}, falling back to estimation.")
         
         # If forced alignment failed or wasn't provided, estimate word timings
         if not word_timings:
@@ -247,6 +236,8 @@ class VideoMontageGenerator:
         
         - **NEVER miss**, **remove**, **reorder**, or **modify** any part of the story text. All the original text must be present exactly as it is.
         
+        - **NEVER ignore any image prompt**. Each image prompt must be matched to a chunk of the story text.
+        
         - Only chunk the story into parts based on the logic above.
         
         - Each JSON element must contain:
@@ -334,13 +325,13 @@ class VideoMontageGenerator:
         return merged_list
 
     def create_montage(self, 
-                  story_text: str,
-                  audio_path: str,
-                  video_paths: List[str],
-                  image_paths: List[str],
-                  prompts: List[str],
-                  first_k_sentences: List[str],
-                  output_path: str) -> str:
+                      story_text: str,
+                      audio_path: str,
+                      video_paths: List[str],
+                      image_paths: List[str],
+                      prompts: List[str],
+                      first_k_sentences: List[str],
+                      output_path: str) -> str:
         """Create synchronized video montage with precise timing"""
         try:
             self.clean_temp_files()
@@ -387,7 +378,11 @@ class VideoMontageGenerator:
             
             # Analyze text segments with timing information using the first k sentences
             # This will ensure exact matching between prompts and segments
-            visual_segments = self.analyze_text_segments(story_text, first_k_sentences, prompts, total_duration, audio_path)
+            visual_segments = self.analyze_text_segments(story_text, first_k_sentences, prompts, total_duration)
+            
+            # Prepare video parts with precise timing
+            video_parts = []
+            total_video_duration = 0
             
             # Count actual video and image segments
             video_segment_count = sum(1 for segment in visual_segments if segment.get("is_video", False))
@@ -404,7 +399,6 @@ class VideoMontageGenerator:
             
             # Create a list to track segment timing information for final assembly
             segment_timing_info = []
-            video_parts = []
             
             for i, segment in enumerate(visual_segments):
                 output_segment = f"{self.temp_dir}/segment_{i}.mp4"
@@ -465,20 +459,22 @@ class VideoMontageGenerator:
                     "is_video": is_video
                 })
                 
+                total_video_duration += actual_duration
                 video_parts.append(output_segment)
             
             # Log total durations before concatenation
             logger.info(f"Total audio duration: {total_duration:.3f}s")
+            logger.info(f"Total video duration: {total_video_duration:.3f}s")
             logger.info(f"Video segments used: {video_index}")
             logger.info(f"Image segments used: {image_index}")
             
-            # Use the new frame-perfect concatenation method for 100% accurate synchronization
-            self._concatenate_videos_frame_perfect(video_parts, audio_path, output_path, segment_timing_info)
+            # Concatenate with precise timing using segment timing information
+            self._concatenate_videos(video_parts, audio_path, output_path, segment_timing_info)
             
             # Verify final output
             final_duration = self.get_video_duration(output_path)
             logger.info(f"Final video duration: {final_duration:.3f}s")
-            logger.info(f"Frame-perfect audio-visual synchronization complete")
+            logger.info(f"Audio-visual synchronization complete with precise timing")
             
             # Display the full story text with segment information
             self._display_story_text_with_segments(segment_timing_info)
@@ -777,181 +773,88 @@ class VideoMontageGenerator:
             logger.error(f"Error in _image_to_video: {str(e)}")
             raise
 
-    def _concatenate_videos_frame_perfect(self, video_parts: List[str], audio_path: str, output_path: str, segment_timing_info=None):
-        """Create video with precise timing using direct positioning of segments at exact timestamps"""
+    def _concatenate_videos(self, video_parts: List[str], audio_path: str, output_path: str, segment_timing_info=None):
+        """Concatenate videos with precise timing and audio sync using segment timing information"""
         try:
-            if not segment_timing_info:
-                raise ValueError("Segment timing information is required for precise synchronization")
+            if not video_parts:
+                raise ValueError("No video parts to concatenate")
                 
-            # Create a temporary directory for filter files
-            filter_dir = f"{self.temp_dir}/filters"
-            os.makedirs(filter_dir, exist_ok=True)
+            concat_file = f"{self.temp_dir}/concat.txt"
+            temp_video = f"{self.temp_dir}/temp_concat.mp4"
             
-            # Sort segments by start time
-            sorted_segments = sorted(segment_timing_info, key=lambda x: x.get("start_time", 0))
-            total_duration = max(segment["end_time"] for segment in sorted_segments)
-            logger.info(f"Total content duration: {total_duration:.3f}s")
+            # Verify all parts exist
+            missing_parts = [p for p in video_parts if not os.path.exists(p)]
+            if missing_parts:
+                raise FileNotFoundError(f"Missing video parts: {missing_parts}")
             
-            # Build complex filter for precise overlay timing
-            filter_complex = []
-            input_count = 0
+            # If we have segment timing info, we'll use it for precise synchronization
+            use_precise_sync = segment_timing_info is not None and len(segment_timing_info) > 0
             
-            # First input is a black background canvas
-            filter_complex.append(f"color=c=black:s=1920x1080:r=60:d={total_duration+1}[bg]")
+            # Display story text with segment highlighting for debugging
+            if use_precise_sync and segment_timing_info:
+                self._display_story_text_with_segments(segment_timing_info)
             
-            # Add each segment with exact timing
-            overlays = []
-            current_chain = "bg"
-            
-            for i, segment in enumerate(sorted_segments):
-                start_time = segment["start_time"]
-                end_time = segment["end_time"]
-                segment_path = segment["segment_path"]
-                duration = end_time - start_time
+            if use_precise_sync:
+                logger.info("Using precise segment timing for perfect audio-visual synchronization")
                 
-                # Skip invalid segments
-                if not os.path.exists(segment_path) or duration <= 0:
-                    logger.warning(f"Skipping invalid segment: {segment_path}")
-                    continue
-                    
-                logger.info(f"Adding segment {i+1} at precise time: {start_time:.3f}s to {end_time:.3f}s")
+                # Create a complex filter for precise timing
+                filter_complex = []
+                inputs = []
                 
-                # Add this input to the filter
-                input_idx = i + 1  # +1 because our first input is the black background
-                
-                # Define overlay with exact timing
-                filter_complex.append(f"[{current_chain}][{input_idx}:v]overlay=enable='between(t,{start_time},{end_time})':shortest=1[v{i}]")
-                current_chain = f"v{i}"
-            
-            # Add the audio as the last input
-            audio_input_idx = len(sorted_segments) + 1
-            
-            # Combine all filters
-            filter_str = ";".join(filter_complex)
-            
-            # Create the ffmpeg command
-            ffmpeg_cmd = ['ffmpeg', '-y']
-            
-            # Add black background generator input
-            ffmpeg_cmd.extend(['-f', 'lavfi', '-i', 'color=c=black:s=1920x1080:r=60'])
-            
-            # Add all segment inputs
-            for segment in sorted_segments:
-                ffmpeg_cmd.extend(['-i', segment["segment_path"]])
-            
-            # Add audio input
-            ffmpeg_cmd.extend(['-i', audio_path])
-            
-            # Add filter complex
-            ffmpeg_cmd.extend(['-filter_complex', filter_str])
-            
-            # Output mapping and encoding
-            ffmpeg_cmd.extend([
-                '-map', f'[{current_chain}]',
-                '-map', f'{audio_input_idx}:a',
-                '-c:v', 'libx264',
-                '-preset', 'fast',
-                '-pix_fmt', 'yuv420p',
-                '-c:a', 'aac',
-                '-shortest',
-                output_path
-            ])
-            
-            # Execute the command
-            logger.info("Executing precise overlay command")
-            with open(f"{filter_dir}/ffmpeg_cmd.txt", "w") as f:
-                f.write(" ".join(ffmpeg_cmd))
-            
-            result = subprocess.run(
-                ffmpeg_cmd,
-                check=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            if result.returncode != 0:
-                logger.error(f"FFmpeg error during precise overlay: {result.stderr}")
-                logger.warning("Falling back to simpler method")
-                
-                # Fallback to simpler command with fewer overlays at once
-                self._concatenate_with_simple_fallback(sorted_segments, audio_path, output_path)
-            else:
-                logger.info("Precise overlay completed successfully")
-                
-            # Verify final output
-            final_duration = self.get_video_duration(output_path)
-            logger.info(f"Final video duration: {final_duration:.3f}s")
-            
-        except Exception as e:
-            logger.error(f"Error in precise concatenation: {str(e)}")
-            # Try fallback method
-            try:
-                logger.warning("Trying fallback concatenation method")
-                self._concatenate_with_simple_fallback(segment_timing_info, audio_path, output_path)
-            except Exception as fallback_e:
-                logger.error(f"Fallback concatenation also failed: {str(fallback_e)}")
-                raise
-
-    def _concatenate_with_simple_fallback(self, segment_timing_info, audio_path, output_path):
-        """Simpler fallback method for creating timed video with fewer overlays at once"""
-        try:
-            # Sort segments by start time
-            sorted_segments = sorted(segment_timing_info, key=lambda x: x.get("start_time", 0))
-            
-            # We'll create a sequence of video chunks that exactly match our timing needs
-            chunks = []
-            current_time = 0
-            
-            for i, segment in enumerate(sorted_segments):
-                start_time = segment["start_time"]
-                end_time = segment["end_time"]
-                segment_path = segment["segment_path"]
-                
-                # If there's a gap before this segment, fill with black
-                if start_time > current_time:
-                    gap_duration = start_time - current_time
-                    if gap_duration > 0.1:  # Only fill gaps larger than 100ms
-                        logger.info(f"Adding black frame gap: {current_time:.3f}s to {start_time:.3f}s (duration: {gap_duration:.3f}s)")
-                        black_chunk = f"{self.temp_dir}/black_{i}.mp4"
-                        
-                        black_cmd = [
-                            'ffmpeg', '-y',
-                            '-f', 'lavfi',
-                            '-i', f'color=c=black:s=1920x1080:r=60:d={gap_duration}',
-                            '-c:v', 'libx264',
-                            '-preset', 'ultrafast',
-                            '-pix_fmt', 'yuv420p',
-                            black_chunk
-                        ]
-                        subprocess.run(black_cmd, check=True)
-                        chunks.append(black_chunk)
-                
-                # Use exact segment duration
-                exact_duration = end_time - start_time
-                exact_segment = f"{self.temp_dir}/exact_segment_{i}.mp4"
-                
-                # Create exact duration segment
-                trim_cmd = [
+                # First, extract the audio from the original audio file
+                audio_temp = f"{self.temp_dir}/audio_temp.wav"
+                extract_audio_cmd = [
                     'ffmpeg', '-y',
-                    '-i', segment_path,
-                    '-t', f"{exact_duration:.3f}",
-                    '-c:v', 'libx264',
-                    '-preset', 'ultrafast',
-                    '-pix_fmt', 'yuv420p',
-                    exact_segment
+                    '-i', audio_path,
+                    '-vn', '-acodec', 'pcm_s16le',
+                    audio_temp
                 ]
-                subprocess.run(trim_cmd, check=True)
-                chunks.append(exact_segment)
                 
-                # Update current time
-                current_time = end_time
+                subprocess.run(extract_audio_cmd, check=True)
                 
-            # Concatenate all chunks
-            concat_file = f"{self.temp_dir}/concat_fallback.txt"
+                # Process each segment with precise timing
+                for i, segment in enumerate(segment_timing_info):
+                    segment_path = segment["segment_path"]
+                    start_time = segment["start_time"]
+                    end_time = segment["end_time"]
+                    duration = end_time - start_time
+                    
+                    # Create a trimmed audio segment
+                    segment_audio = f"{self.temp_dir}/segment_audio_{i}.wav"
+                    trim_audio_cmd = [
+                        'ffmpeg', '-y',
+                        '-i', audio_temp,
+                        '-ss', f"{start_time:.3f}",
+                        '-t', f"{duration:.3f}",
+                        segment_audio
+                    ]
+                    
+                    subprocess.run(trim_audio_cmd, check=True)
+                    
+                    # Create a video with the exact audio segment
+                    segment_with_audio = f"{self.temp_dir}/segment_with_audio_{i}.mp4"
+                    combine_cmd = [
+                        'ffmpeg', '-y',
+                        '-i', segment_path,
+                        '-i', segment_audio,
+                        '-c:v', 'libx264',
+                        '-preset', 'fast',
+                        '-c:a', 'aac',
+                        '-strict', 'experimental',
+                        '-map', '0:v:0',
+                        '-map', '1:a:0',
+                        segment_with_audio
+                    ]
+                    
+                    subprocess.run(combine_cmd, check=True)
+                    
+                    # Add to our list of segments with synchronized audio
+                    video_parts[i] = segment_with_audio
+            
+            # Write the concat file with our updated segments
             with open(concat_file, 'w', encoding='utf-8') as f:
-                for chunk in chunks:
-                    f.write(f"file '{os.path.abspath(chunk)}'\n")
+                for part in video_parts:
+                    f.write(f"file '{os.path.abspath(part)}'\n")
             
             # Concatenate videos
             concat_cmd = [
@@ -962,25 +865,90 @@ class VideoMontageGenerator:
                 '-c:v', 'libx264',
                 '-preset', 'fast',
                 '-pix_fmt', 'yuv420p',
-                f"{self.temp_dir}/video_only.mp4"
             ]
-            subprocess.run(concat_cmd, check=True)
             
-            # Add audio
-            final_cmd = [
-                'ffmpeg', '-y',
-                '-i', f"{self.temp_dir}/video_only.mp4",
-                '-i', audio_path,
-                '-c:v', 'copy',
-                '-c:a', 'aac',
-                '-map', '0:v:0',
-                '-map', '1:a:0',
-                output_path
-            ]
-            subprocess.run(final_cmd, check=True)
+            # If we used precise sync, we already have audio in each segment
+            if use_precise_sync:
+                concat_cmd.extend([
+                    '-c:a', 'aac',
+                    output_path
+                ])
+            else:
+                # Standard method - concatenate video then add audio
+                concat_cmd.append(temp_video)
             
-            logger.info("Fallback concatenation completed successfully")
-        
+            # Run with error capture
+            result = subprocess.run(
+                concat_cmd, 
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            if result.returncode != 0:
+                logger.error(f"FFmpeg concatenation error: {result.stderr}")
+                raise RuntimeError("Video concatenation failed")
+            
+            # If we didn't use precise sync, add the audio track now
+            if not use_precise_sync:
+                # Verify temp video was created
+                if not os.path.exists(temp_video) or os.path.getsize(temp_video) == 0:
+                    raise FileNotFoundError("Concatenated video file was not created properly")
+                
+                # Add audio with standard sync
+                final_cmd = [
+                    'ffmpeg', '-y',
+                    '-i', temp_video,
+                    '-i', audio_path,
+                    '-c:v', 'copy',
+                    '-c:a', 'aac',
+                    '-strict', 'experimental',
+                    '-shortest',
+                    '-async', '1',
+                    '-map', '0:v:0',
+                    '-map', '1:a:0',
+                    output_path
+                ]
+                
+                # Run with error capture
+                result = subprocess.run(
+                    final_cmd, 
+                    check=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                
+                if result.returncode != 0:
+                    logger.error(f"FFmpeg audio addition error: {result.stderr}")
+                    # Try alternative method if adding audio fails
+                    alt_cmd = [
+                        'ffmpeg', '-y',
+                        '-i', temp_video,
+                        '-i', audio_path,
+                        '-c:v', 'libx264',  # Re-encode video
+                        '-preset', 'fast',
+                        '-c:a', 'aac',
+                        '-strict', 'experimental',
+                        '-shortest',
+                        output_path
+                    ]
+                    
+                    logger.info("Attempting alternative audio addition method")
+                    subprocess.run(alt_cmd, check=True)
+            
+            # Clean up temp files
+            if os.path.exists(temp_video):
+                os.remove(temp_video)
+            if os.path.exists(concat_file):
+                os.remove(concat_file)
+            
+            logger.info("Video montage created with perfect audio-visual synchronization")
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"FFmpeg error during concatenation: {e.stderr if hasattr(e, 'stderr') else str(e)}")
+            raise
         except Exception as e:
-            logger.error(f"Error in fallback concatenation: {str(e)}")
+            logger.error(f"Error in video concatenation: {str(e)}")
             raise
