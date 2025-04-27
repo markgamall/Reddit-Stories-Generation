@@ -274,7 +274,7 @@ class VideoMontageGenerator:
             if json_match:
                 response_text = json_match.group(0)  
             
-            # Parse the JSON response
+            # Parse the JSON responseee
             image_chunks = json.loads(response_text)
             
             # Merge chunks with the same image prompt
