@@ -1733,7 +1733,7 @@ else:  # Story Generation
                         st.video(st.session_state.final_video_path)
                         print(f"Fallback: displayed existing video using direct path: {st.session_state.final_video_path}")
                     except Exception as e2:
-                        print(f"Fallback for existing video also failed: {str(e2)}")"}]}}}
+                        print(f"Fallback for existing video also failed: {str(e2)}")
 
             # Attempt to restore video path from MongoDB if not in session state
             if story_data and '_id' in story_data:
