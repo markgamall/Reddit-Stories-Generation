@@ -77,17 +77,28 @@ class VideoMontageGenerator:
         # Try to use forced alignment if audio path is provided
         if audio_path is not None:
             try:
-                from transformers import pipeline
-                asr = pipeline('automatic-speech-recognition', model='openai/whisper-large-v2', device=-1, return_timestamps='word')
-                result = asr(audio_path)
-                for chunk in result['chunks']:
-                    word = chunk['text'].strip()
-                    start = chunk['timestamp'][0]
-                    end = chunk['timestamp'][1]
-                    word_timings.append((word, start, end-start))
-                    word_to_time[word] = (start, end)
+                logger.info("Using OpenAI Whisper API for transcription with word timestamps")
+                with open(audio_path, "rb") as audio_file:
+                    response = self.openai_client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=audio_file,
+                        response_format="verbose_json",
+                        timestamp_granularities=["word"]
+                    )
+                
+                # Process word timestamps from OpenAI response
+                if hasattr(response, 'words') and response.words:
+                    for word_data in response.words:
+                        word = word_data.word.strip()
+                        start = word_data.start
+                        end = word_data.end
+                        word_timings.append((word, start, end-start))
+                        word_to_time[word] = (start, end)
+                    logger.info(f"Successfully extracted {len(word_timings)} word timings from OpenAI Whisper API")
+                else:
+                    logger.warning("OpenAI Whisper API did not return word timestamps")
             except Exception as e:
-                logger.warning(f"ASR forced alignment failed: {e}, falling back to estimation.")
+                logger.warning(f"OpenAI Whisper API error: {e}, falling back to estimation.")
         
         # If forced alignment failed or wasn't provided, estimate word timings
         if not word_timings:
