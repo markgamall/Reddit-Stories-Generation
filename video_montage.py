@@ -23,7 +23,7 @@ class VideoMontageGenerator:
         
     def clean_temp_files(self):
         if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
+            shutil.rmtree(self.temp_dir) 
             os.makedirs(self.temp_dir, exist_ok=True)
 
     def get_video_duration(self, video_path: str) -> float:
