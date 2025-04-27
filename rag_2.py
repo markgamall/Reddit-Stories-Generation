@@ -57,6 +57,7 @@ You are a captivating digital storyteller creating binge-worthy content for YouT
      * Any mentioned names in dialogue or descriptions
    - Ensure name changes are consistent throughout the story
    - Double-check that no original names remain in the text
+   - The new names MUST be normal, common, and real names that fit the story's tone and setting. Avoid using weird or unusual names.
 
 3. NEVER include any of the following:
    - Scene directions like "(cut to flashback)" or "(fade to black)"
@@ -189,6 +190,7 @@ def generate_character_mapping(character_names, llm):
     1. Is unique and memorable
     2. Fits the story's tone
     3. Is appropriate for the character's role
+    4. Is a normal, common, and real name. Avoid using weird or unusual names.
     
     Format your response as a JSON object where:
     - Keys are the original names

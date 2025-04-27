@@ -1777,6 +1777,10 @@ else:  # Story Generation
                         
                         # Combine video and image prompts
                         all_prompts = video_prompts + image_prompts
+
+                        sentences = story_data['story'].replace('\n', ' ').split('. ')
+                        sentences = [s.strip() + '.' for s in sentences if s.strip()]
+                        first_k_sentences = sentences[:len(video_prompts)]
                         
                         final_video_path = montage_generator.create_montage(
                             story_text=story_data['story'],
@@ -1784,6 +1788,7 @@ else:  # Story Generation
                             video_paths=video_paths,
                             image_paths=image_paths,
                             prompts=all_prompts,
+                            first_k_sentences=first_k_sentences,
                             output_path=output_path
                         )
                         
