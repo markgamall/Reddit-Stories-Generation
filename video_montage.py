@@ -226,34 +226,31 @@ class VideoMontageGenerator:
         # Use ChatGPT to chunk the remaining story based on image prompts
         system_message = """
         You are a professional story chunker and JSON formatter.
-
+        
         Your task is:
-
+        
         1. You will receive a story text along with a LIST OF NUMBERED IMAGE GENERATION PROMPTS.
-
+        
         2. Your goal is to chunk the story based on the following exact rules:
-        - You MUST use ALL image prompts, in their exact original order (0, 1, 2, etc.).
-        - For each prompt in order, find the FIRST sentence in the remaining text that best matches or relates to that prompt.
-        - When you find a matching sentence, start a new chunk beginning with that sentence.
-        - Continue that chunk until you reach the sentence that matches the next prompt.
-
-        3. Critical requirements:
-        - EVERY image prompt must be used exactly once.
-        - Image prompts must be used in their original numbered order (0, 1, 2, etc.).
-        - The entire story must be included with NO text removed, modified, or reordered.
-        - The sum of all chunks must equal the exact original story text.
+        - Carefully read and match the sentences to the image generation prompts.
+        - Whenever you find a sentence that is **very relevant** or **similar** to an image generation prompt:
+        - Split a new chunk starting from that sentence.
+        - Keep that sentence and all sentences that come after it together in the same chunk, **until** you find another sentence that is highly relevant to the next image generation prompt.
+        - When you find another matching sentence, split again into a new chunk.
+        - Continue this process until the end of the story.
+        
+        3. Very important rules:
+        - **NEVER miss**, **remove**, **reorder**, or **modify** any part of the story text. All the original text must be present exactly as it is.
         - Never skip or miss any image prompt.
-
-        4. Format your final output as a JSON list where each element has three fields:
-        - "chunk": The exact text portion of the story for this section.
-        - "image": The associated image prompt (copied exactly).
-        - "prompt_index": The original number of the prompt (0-indexed) as given in the list.
-
-        5. Verification steps before submitting:
-        - Confirm every image prompt has been used exactly once.
-        - Verify the prompts are used in the correct numerical order.
-        - Check that no story text is missing, duplicated, or altered.
-        - Ensure the number of JSON objects equals the number of image prompts.
+        - Only chunk the story into parts based on the logic above.
+        - Each JSON element must contain:
+            - A "chunk" field: The exact text of that part of the story.
+            - An "image" field: The associated image prompt (copy the full prompt text exactly).
+            - An "prompt_index" field: THE ORIGINAL NUMBER OF THE PROMPT (0-indexed) as it appears in the list I provide.
+        
+        4. Format your final output as a JSON list where each element has three fields: "chunk", "image", and "prompt_index".
+        
+        Be extremely careful and precise with the prompt_index field - it must match the exact index of the prompt as given in my list.
         """
         
         try:
@@ -264,9 +261,10 @@ class VideoMontageGenerator:
                 original_idx = idx + video_prompt_count
                 numbered_image_prompts.append(f"Prompt #{original_idx}: {prompt}")
 
-            print("############################################")
-            print(numbered_image_prompts)
-            print("############################################")
+            logger.info("############################################")
+            logger.info(json.dumps(numbered_image_prompts))
+            logger.info(numbered_image_prompts)
+            logger.info("############################################")
             
             # Call ChatGPT to chunk the story
             messages = [
@@ -275,7 +273,7 @@ class VideoMontageGenerator:
             ]
             
             response = self.openai_client.chat.completions.create(
-                model="gpt-4.1",
+                model="gpt-4o",
                 messages=messages,
                 temperature=0,
                 max_tokens=4000
