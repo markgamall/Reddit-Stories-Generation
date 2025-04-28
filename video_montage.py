@@ -23,7 +23,7 @@ class VideoMontageGenerator:
         
     def clean_temp_files(self):
         if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir) 
+            shutil.rmtree(self.temp_dir)
             os.makedirs(self.temp_dir, exist_ok=True)
 
     def get_video_duration(self, video_path: str) -> float:
@@ -193,7 +193,6 @@ class VideoMontageGenerator:
     def _chunk_story_with_chatgpt(self, story_text: str, first_k_sentences: List[str], prompts: List[str]) -> List[Dict]:
         """Use ChatGPT to intelligently chunk the story based on relevance to image prompts.
         First k sentences are assigned to videos, and the rest are chunked for images.
-        Returns chunks with only the prompts that were successfully matched to text.
         """
         import re
         import json
@@ -292,9 +291,6 @@ class VideoMontageGenerator:
             # Parse the JSON response
             image_chunks = json.loads(response_text)
             
-            # Track which prompts were actually used
-            used_prompt_indices = set()
-            
             # Validate the prompt_index in each chunk to ensure it's within range
             for chunk in image_chunks:
                 if "prompt_index" not in chunk:
@@ -302,22 +298,13 @@ class VideoMontageGenerator:
                     for idx, prompt in enumerate(image_prompts):
                         if chunk["image"] == prompt:
                             chunk["prompt_index"] = idx + video_prompt_count
-                            used_prompt_indices.add(chunk["prompt_index"])
                             break
                     else:
                         # Default to the first image prompt if no match found
                         chunk["prompt_index"] = video_prompt_count
-                        used_prompt_indices.add(video_prompt_count)
                 else:
                     # Ensure prompt_index is within valid range
                     chunk["prompt_index"] = max(video_prompt_count, min(len(prompts) - 1, chunk["prompt_index"]))
-                    used_prompt_indices.add(chunk["prompt_index"])
-            
-            # Log which prompts were used and which weren't
-            all_prompt_indices = set(range(len(prompts)))
-            unused_prompt_indices = all_prompt_indices - used_prompt_indices
-            if unused_prompt_indices:
-                logger.info(f"The following prompts were not matched to any text: {sorted(list(unused_prompt_indices))}")
             
             # Sort chunks by their prompt_index to maintain order
             image_chunks.sort(key=lambda x: x.get("prompt_index", video_prompt_count))
@@ -430,12 +417,6 @@ class VideoMontageGenerator:
             # This will ensure exact matching between prompts and segments
             visual_segments = self.analyze_text_segments(story_text, first_k_sentences, prompts, total_duration, audio_path)
             
-            # Check which prompts were actually used in the segments
-            used_prompt_indices = set(segment.get("prompt_index", -1) for segment in visual_segments)
-            
-            # Filter out segments with unused prompts
-            visual_segments = [segment for segment in visual_segments if segment.get("prompt_index", -1) in used_prompt_indices]
-            
             # Count actual video and image segments
             video_segment_count = sum(1 for segment in visual_segments if segment.get("is_video", False))
             image_segment_count = len(visual_segments) - video_segment_count
@@ -444,7 +425,6 @@ class VideoMontageGenerator:
             logger.info(f"  - Total segments: {len(visual_segments)}")
             logger.info(f"  - Video segments: {video_segment_count}")
             logger.info(f"  - Image segments: {image_segment_count}")
-            logger.info(f"  - Used prompt indices: {sorted(list(used_prompt_indices))}")
             
             # Process segments with precise timing for perfect audio-visual sync
             video_index = 0
@@ -471,9 +451,6 @@ class VideoMontageGenerator:
                 logger.info(f"Segment type: {'Video' if is_video else 'Image'}")
                 logger.info(f"Prompt: {prompt[:50]}..." if len(prompt) > 50 else f"Prompt: {prompt}")
                 
-                # Get the prompt index for this segment
-                prompt_index = segment.get("prompt_index", -1)
-                
                 if is_video and video_index < len(video_paths):
                     # For video segments, use the video file
                     visual_path = video_paths[video_index]
@@ -481,7 +458,7 @@ class VideoMontageGenerator:
                     
                     # Trim video to exactly match the audio segment duration for perfect sync
                     self._trim_video(visual_path, output_segment, segment_duration)
-                    logger.info(f"Created video segment with duration: {segment_duration:.3f}s for prompt index {prompt_index}")
+                    logger.info(f"Created video segment with duration: {segment_duration:.3f}s")
                 else:
                     # For image segments, create a video from an image with the exact segment duration
                     if image_index < len(image_paths):
@@ -499,7 +476,7 @@ class VideoMontageGenerator:
                     
                     # Create video from image with precise duration matching the audio segment
                     self._image_to_video(visual_path, output_segment, segment_duration)
-                    logger.info(f"Created video from image with duration: {segment_duration:.3f}s for prompt index {prompt_index}")
+                    logger.info(f"Created video from image with duration: {segment_duration:.3f}s")
                 
                 # Verify segment duration
                 actual_duration = self.get_video_duration(output_segment)
