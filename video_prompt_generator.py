@@ -144,7 +144,7 @@ def truncate_story(story, max_tokens=6000):
 def calculate_number_of_prompts(story):
     """
     Calculate the optimal number of prompts based on story length and video constraints.
-    - Aim: 1 prompt every ~25 words
+    - Aim: 1 prompt every ~25 wordss
     - Max prompts allowed: 30 (for 5 minutes at 10 seconds each)
     """
 
