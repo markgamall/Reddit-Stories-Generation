@@ -143,27 +143,17 @@ def truncate_story(story, max_tokens=6000):
 
 def calculate_number_of_prompts(story):
     """
-    Calculate the number of image prompts to generate based on story length.
-
-    Args:
-        story (str): The input story
-
-    Returns:
-        int: Number of image prompts to generate
+    Calculate the optimal number of prompts based on story length and video constraints.
+    - Aim: 1 prompt every ~25 words
+    - Max prompts allowed: 30 (for 5 minutes at 10 seconds each)
     """
-    # Count words in the story
-    word_count = len(story.split())
 
-    if word_count < 100:
-        return 5
-    if 100 <= word_count <= 350:
-        return 10
-    if 351 <= word_count <= 500:
-        return 15
-    if 501 <= word_count < 700:
-        return 20
-    if word_count >= 700:
-        return 30
+    word_count = len(story.split())
+    prompts_based_on_words = word_count // 25  # ~1 image per 25 words
+    prompts = min(prompts_based_on_words, 30)  # Cap at 30 prompts
+
+    # Ensure at least 5 prompts even for very short stories
+    return max(prompts, 3)
 
 def extract_valid_prompts(raw_prompts, expected_count=None):
     """
