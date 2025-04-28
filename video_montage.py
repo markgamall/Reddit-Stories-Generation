@@ -10,6 +10,7 @@ from openai import OpenAI
 from pydub import AudioSegment
 import numpy as np
 from transformers import pipeline
+from moviepy.editor import VideoFileClip, ImageClip, AudioFileClip, concatenate_videoclips
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -238,10 +239,12 @@ class VideoMontageGenerator:
         - Keep that sentence and all sentences that come after it together in the same chunk, **until** you find another sentence that is highly relevant to the next image generation prompt.
         - When you find another matching sentence, split again into a new chunk.
         - Continue this process until the end of the story.
+        - Never skip or miss any image prompt. You must use all image prompts.
+
         
         3. Very important rules:
         - **NEVER miss**, **remove**, **reorder**, or **modify** any part of the story text. All the original text must be present exactly as it is.
-        - Never skip or miss any image prompt.
+        - Never skip or miss any image prompt. You must use all image prompts.
         - Only chunk the story into parts based on the logic above.
         - Each JSON element must contain:
             - A "chunk" field: The exact text of that part of the story.
@@ -361,6 +364,81 @@ class VideoMontageGenerator:
         
         return merged_list
 
+    def create_sequential_video(self, segment_timing_info, audio_path, output_path="output_video.mp4"):
+        """
+        Create a video with sequential clips using the timing from segment_timing_info.
+        
+        Args:
+            segment_timing_info: The same timing info used in _display_story_text_with_segments
+            audio_path: Path to the narration audio file
+            output_path: Path for the output video
+        """
+        try:
+            # Sort segments by start time to ensure proper order
+            sorted_segments = sorted(segment_timing_info, key=lambda x: x.get("start_time", 0))
+            
+            # Create clips list for each segment with durations from start_time and end_time
+            clips = []
+            
+            for i, segment in enumerate(sorted_segments):
+                start_time = segment.get("start_time", 0)
+                end_time = segment.get("end_time", 0)
+                segment_path = segment.get("segment_path")  # This would be image or video path
+                duration = end_time - start_time
+                is_video = segment.get("is_video", False)
+                
+                logger.info(f"Processing segment {i+1}:")
+                logger.info(f"  - Start time: {start_time:.3f}s")
+                logger.info(f"  - End time: {end_time:.3f}s")
+                logger.info(f"  - Duration: {duration:.3f}s")
+                
+                # Skip invalid segments
+                if not os.path.exists(segment_path) or duration <= 0:
+                    logger.warning(f"Skipping invalid segment: {segment_path}")
+                    continue
+                
+                # Check if this is a video file
+                if is_video:
+                    # For video segments, use VideoFileClip
+                    clip = VideoFileClip(segment_path).set_duration(duration)
+                    logger.info(f"  - Created video clip with duration {duration:.3f}s")
+                else:
+                    # For image segments, use ImageClip
+                    clip = ImageClip(segment_path).set_duration(duration)
+                    logger.info(f"  - Created image clip with duration {duration:.3f}s")
+                
+                clips.append(clip)
+            
+            # Use simple concatenation approach as requested
+            logger.info(f"Concatenating {len(clips)} clips in sequence")
+            final_video = concatenate_videoclips(clips, method="compose")
+            
+            # Add audio to the final video
+            audio_clip = AudioFileClip(audio_path)
+            final_video = final_video.set_audio(audio_clip)
+            
+            # Write final video
+            logger.info(f"Writing output video to {output_path}")
+            final_video.write_videofile(
+                output_path, 
+                fps=24,
+                codec='libx264', 
+                audio_codec='aac'
+            )
+            
+            # Clean up MoviePy clips to release resources
+            audio_clip.close()
+            for clip in clips:
+                clip.close()
+            final_video.close()
+            
+            logger.info(f"Video created successfully: {output_path}")
+            return output_path
+            
+        except Exception as e:
+            logger.error(f"Error in video creation: {str(e)}")
+            raise
+
     def create_montage(self, 
                   story_text: str,
                   audio_path: str,
@@ -373,148 +451,62 @@ class VideoMontageGenerator:
         try:
             self.clean_temp_files()
             
-            # Log the counts of prompts, videos, and images for debugging
-            video_prompt_count = len(first_k_sentences)
-            image_prompt_count = len(prompts) - video_prompt_count
-            total_prompt_count = len(prompts)
-            
-            logger.info(f"Input counts:")
-            logger.info(f"  - Total prompts: {total_prompt_count}")
-            logger.info(f"  - Video prompts: {video_prompt_count}")
-            logger.info(f"  - Image prompts: {image_prompt_count}")
-            logger.info(f"  - Video files: {len(video_paths)}")
-            logger.info(f"  - Image files: {len(image_paths)}")
-            
-            # First validate all input files exist
-            missing_videos = [p for p in video_paths if not os.path.exists(p)]
-            if missing_videos:
-                logger.warning(f"Missing video files: {missing_videos}")
-                # Filter out missing videos
-                video_paths = [p for p in video_paths if os.path.exists(p)]
-
-            missing_images = [p for p in image_paths if not os.path.exists(p)]
-            if missing_images:
-                logger.warning(f"Missing image files: {missing_images}")
-                # Filter out missing images  
-                image_paths = [p for p in image_paths if os.path.exists(p)]
-
-            if not video_paths and not image_paths:
-                raise FileNotFoundError("No valid video or image files found")
-                
-            # Validate that we have enough media files for the prompts
-            if len(video_paths) < video_prompt_count:
-                logger.warning(f"Not enough video files ({len(video_paths)}) for video prompts ({video_prompt_count})")
-                
-            if len(image_paths) < image_prompt_count:
-                logger.warning(f"Not enough image files ({len(image_paths)}) for image prompts ({image_prompt_count})")
-            
-            # Get precise audio duration
+            # Get audio duration
+            from pydub import AudioSegment
             audio = AudioSegment.from_mp3(audio_path)
-            total_duration = len(audio) / 1000.0  # Convert to seconds
-            logger.info(f"Total audio duration: {total_duration:.3f} seconds")
+            total_duration = len(audio) / 1000.0
             
-            # Analyze text segments with timing information using the first k sentences
-            # This will ensure exact matching between prompts and segments
+            # Get segment timing info using the same analysis function
             visual_segments = self.analyze_text_segments(story_text, first_k_sentences, prompts, total_duration, audio_path)
             
-            # Count actual video and image segments
-            video_segment_count = sum(1 for segment in visual_segments if segment.get("is_video", False))
-            image_segment_count = len(visual_segments) - video_segment_count
-            
-            logger.info(f"Segment counts after analysis:")
-            logger.info(f"  - Total segments: {len(visual_segments)}")
-            logger.info(f"  - Video segments: {video_segment_count}")
-            logger.info(f"  - Image segments: {image_segment_count}")
-            
-            # Process segments with precise timing for perfect audio-visual sync
+            # Process segments to prepare files
             video_index = 0
             image_index = 0
-            
-            # Create a list to track segment timing information for final assembly
             segment_timing_info = []
-            video_parts = []
             
             for i, segment in enumerate(visual_segments):
                 output_segment = f"{self.temp_dir}/segment_{i}.mp4"
                 segment_duration = segment["duration"]
                 is_video = segment.get("is_video", False)
-                prompt = segment.get("prompt", "")
                 
-                # Get precise timing information for audio synchronization
+                # Get precise timing information
                 start_time = segment.get("start_time", 0)
                 end_time = segment.get("end_time", 0)
-                actual_audio_duration = segment.get("actual_audio_duration", segment_duration)
-                
-                logger.info(f"Processing segment {i + 1}")
-                logger.info(f"Target duration: {segment_duration:.3f}s")
-                logger.info(f"Audio timing: {start_time:.3f}s to {end_time:.3f}s")
-                logger.info(f"Segment type: {'Video' if is_video else 'Image'}")
-                logger.info(f"Prompt: {prompt[:50]}..." if len(prompt) > 50 else f"Prompt: {prompt}")
                 
                 if is_video and video_index < len(video_paths):
                     # For video segments, use the video file
-                    visual_path = video_paths[video_index]
+                    segment_path = video_paths[video_index]
                     video_index += 1
-                    
-                    # Trim video to exactly match the audio segment duration for perfect sync
-                    self._trim_video(visual_path, output_segment, segment_duration)
-                    logger.info(f"Created video segment with duration: {segment_duration:.3f}s")
                 else:
-                    # For image segments, create a video from an image with the exact segment duration
+                    # For image segments, use an image
                     if image_index < len(image_paths):
-                        visual_path = image_paths[image_index]
+                        segment_path = image_paths[image_index]
                         image_index += 1
                     else:
-                        # If we run out of image paths, reuse the last one
-                        if len(image_paths) > 0:
-                            logger.warning(f"Ran out of image files, reusing the last one for segment {i+1}")
-                            visual_path = image_paths[-1]
-                        else:
-                            # Fallback if no images available
-                            logger.error("No image paths available!")
-                            continue
-                    
-                    # Create video from image with precise duration matching the audio segment
-                    self._image_to_video(visual_path, output_segment, segment_duration)
-                    logger.info(f"Created video from image with duration: {segment_duration:.3f}s")
-                
-                # Verify segment duration
-                actual_duration = self.get_video_duration(output_segment)
-                logger.info(f"Actual segment duration: {actual_duration:.3f}s")
+                        # Fallback if we run out of images
+                        segment_path = image_paths[-1] if image_paths else None
                 
                 # Store timing information for this segment
-                segment_timing_info.append({
-                    "segment_path": output_segment,
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "duration": actual_duration,
-                    "text": segment["text"],
-                    "prompt": prompt,
-                    "is_video": is_video
-                })
-                
-                video_parts.append(output_segment)
+                if segment_path and os.path.exists(segment_path):
+                    segment_timing_info.append({
+                        "segment_path": segment_path,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "duration": end_time - start_time,
+                        "text": segment.get("text", ""),
+                        "is_video": is_video
+                    })
             
-            # Log total durations before concatenation
-            logger.info(f"Total audio duration: {total_duration:.3f}s")
-            logger.info(f"Video segments used: {video_index}")
-            logger.info(f"Image segments used: {image_index}")
+            # Use sequential concatenation approach
+            self.create_sequential_video(segment_timing_info, audio_path, output_path)
             
-            # Use the new frame-perfect concatenation method for 100% accurate synchronization
-            self._concatenate_videos_frame_perfect(video_parts, audio_path, output_path, segment_timing_info)
-            
-            # Verify final output
-            final_duration = self.get_video_duration(output_path)
-            logger.info(f"Final video duration: {final_duration:.3f}s")
-            logger.info(f"Frame-perfect audio-visual synchronization complete")
-            
-            # Display the full story text with segment information
+            # Display the story text with segment information (unchanged)
             self._display_story_text_with_segments(segment_timing_info)
             
             return output_path
             
         except Exception as e:
-            logger.error(f"Error in video montage creation: {str(e)}")
+            logger.error(f"Error in sequential video montage creation: {str(e)}")
             raise
         finally:
             self.clean_temp_files()
