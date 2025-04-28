@@ -512,7 +512,7 @@ class VideoMontageGenerator:
             self.clean_temp_files()
 
     def _copy_video(self, input_path: str, output_path: str):
-        """Copy video maintaining original duration with improved error handling"""
+        """Copy video maintaining original duration with improved error handling""" 
         try:
             # Simple copy command with minimal processing
             copy_cmd = [
