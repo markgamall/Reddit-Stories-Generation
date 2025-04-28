@@ -10,7 +10,7 @@ class ImageAudioVideoCreator:
     def __init__(self):
         self.image_duration = 10  # seconds per image
         self.max_initial_duration = 300  # 5 minutes before using last image
-
+ 
     def create_video(self, image_paths, audio_path, output_dir, story_id):
         """
         Create a video from a list of images and an audio file.
