@@ -324,7 +324,7 @@ def generate_speech_default(text, voice="nova"):
                 )
                 
                 # Save the audio to a temporary file
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file: 
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:  
                     temp_file.write(response.content)
                     audio_files.append(temp_file.name)
                 
