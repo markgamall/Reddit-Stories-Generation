@@ -1372,7 +1372,7 @@ else:  # Story Generation
                         try:
                             # Only delete files not from current session and older than 1 hour
                             if (file_path not in current_session_files and 
-                                os.path.getmtime(file_path) < time.time() - 10800):  # 3 hours
+                                os.path.getmtime(file_path) < time.time() - 3600):  # 3 hours
                                 os.remove(file_path)
                         except Exception as e:
                             print(f"Error deleting {file_path}: {e}")
