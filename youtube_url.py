@@ -38,6 +38,7 @@ def get_video_info(video_url):
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
+        'cookiefile': 'cookies.txt' # <--- add this line
     }
     
     try:
