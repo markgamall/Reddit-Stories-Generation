@@ -13,6 +13,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 # Load the model once when the module is imported
 default_model = "tiny.en"
 model = whisper.load_model(default_model)
@@ -85,43 +86,63 @@ def check_transcription_validity(transcription):
     else:
         return "valid"
 
-def download_audio_directly(video_url, output_dir="."):
-    """Download just the audio track using yt-dlp without requiring ffmpeg"""
-    os.makedirs(output_dir, exist_ok=True)
-    
+
+def sanitize_filename(name):
+    return re.sub(r'[\\/*?:"<>|]', "", name).strip()
+
+def download_audio_yt_dlp(video_url, output_dir):
     temp_filename = f"temp_audio_{int(time.time())}"
     output_template = os.path.join(output_dir, f"{temp_filename}.%(ext)s")
-    
+
     opts = {
-        'format': 'bestaudio',  # Get best audio
+        'format': 'bestaudio',
         'outtmpl': output_template,
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
-        # No ffmpeg post-processors
     }
 
+    with YoutubeDL(opts) as ydl:
+        info_dict = ydl.extract_info(video_url, download=True)
+        video_title = sanitize_filename(info_dict.get('title', 'Unknown_Title'))
+
+        # Search for the audio file
+        for file in os.listdir(output_dir):
+            if file.startswith(temp_filename):
+                return os.path.join(output_dir, file), video_title
+
+        raise FileNotFoundError("Audio file was not found after yt-dlp download.")
+
+def download_audio_pytube(video_url, output_dir):
+    yt = YouTube(video_url)
+    stream = yt.streams.filter(only_audio=True).order_by('abr').desc().first()
+    if not stream:
+        raise ValueError("No audio stream found with pytube.")
+    
+    video_title = sanitize_filename(yt.title)
+    output_path = stream.download(output_path=output_dir, filename=f"{video_title}.mp4")
+    return output_path, video_title
+
+def download_audio_directly(video_url, output_dir="."):
+    """Download audio from a YouTube video with fallback from yt-dlp to pytube"""
+    os.makedirs(output_dir, exist_ok=True)
+
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info_dict = ydl.extract_info(video_url, download=True)
-            video_title = sanitize_filename(info_dict.get('title', 'Unknown_Title'))
-            
-            # Find the downloaded file
-            audio_path = None
-            for file in os.listdir(output_dir):
-                if file.startswith(temp_filename):
-                    audio_path = os.path.join(output_dir, file)
-                    break
-                    
-            if audio_path:
-                logger.info(f"Audio downloaded to: {audio_path}")
-                return audio_path, video_title
-            else:
-                logger.error("Could not locate downloaded audio file")
-                return None, video_title
+        logger.info("Trying yt-dlp for audio download...")
+        return download_audio_yt_dlp(video_url, output_dir)
+    
     except Exception as e:
-        logger.error(f"Error downloading audio: {e}")
-        return None, None
+        logger.warning(f"yt-dlp failed: [{type(e).__name__}] {e}")
+        logger.info("Falling back to pytube...")
+
+        try:
+            return download_audio_pytube(video_url, output_dir)
+        except PytubeError as pe:
+            logger.error(f"pytube also failed: [{type(pe).__name__}] {pe}")
+        except Exception as e:
+            logger.error(f"Unhandled error in pytube: [{type(e).__name__}] {e}")
+
+    return None, None
 
 def generate_whisper_transcription(audio_path):
     try:
