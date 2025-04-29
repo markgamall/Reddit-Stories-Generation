@@ -3,6 +3,10 @@ import time
 import tempfile
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import TextFormatter
+from pytube.exceptions import PytubeError
+from pathlib import Path
+from pytube import YouTube
+from yt_dlp import YoutubeDL
 import yt_dlp
 import re
 import whisper
