@@ -35,11 +35,12 @@ def get_video_id_from_url(video_url):
 def get_video_info(video_url):
     """Get title and other info without downloading the video"""
     opts = {
-        'skip_download': True,
-        'quiet': True,
-        'no_warnings': True,
-        'cookiefile': 'cookies.txt' # <--- add this line
-    }
+    'skip_download': True,
+    'quiet': True,
+    'no_warnings': True,
+    'ignoreerrors': True,  # Continue on download errors
+    'geo_bypass': True,    # Try to bypass geo-restrictions
+    }   
     
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -111,11 +112,12 @@ def download_audio_yt_dlp(video_url, output_dir):
     output_template = os.path.join(output_dir, f"{temp_filename}.%(ext)s")
 
     opts = {
-        'format': 'bestaudio',
-        'outtmpl': output_template,
-        'noplaylist': True,
-        'quiet': True,
-        'no_warnings': True,
+    'format': 'bestaudio/best',  # Get best audio format available
+    'outtmpl': output_template,
+    'noplaylist': True,
+    'quiet': True,
+    'no_warnings': True,
+    'geo_bypass': True,  # Try to bypass geo-restrictions
     }
 
     with YoutubeDL(opts) as ydl:
@@ -193,7 +195,7 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
     # Try to get info first
     video_info = get_video_info(video_url)
     if not video_info:
-        return {"success": False, "error": "Could not fetch video information"}
+        return {"success": False, "error": "YouTube content access restricted. This video may be unavailable in your region or protected by content policies. Consider using a VPN or checking if the video is publicly accessible."}
     
     # Try to get YouTube transcription first
     transcript_text = get_video_transcription(video_id)
