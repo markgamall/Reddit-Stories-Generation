@@ -1,6 +1,5 @@
 import os
-from langchain_openai import ChatOpenAI
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings  # Added OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
@@ -24,8 +23,10 @@ client = MongoClient(mongo_uri)
 db = client['reddit_stories_db']
 generated_stories_collection = db['generated_stories']
 
-# Initialize resources (global state)
-embeddings = HuggingFaceEmbeddings()
+embeddings = OpenAIEmbeddings(
+    api_key=os.environ['OPENAI_API_KEY'],
+    model="text-embedding-ada-002"  # You can also use "text-embedding-3-small" or "text-embedding-3-large" for newer models
+)
 
 # Initialize LLM and chains
 llm = ChatOpenAI(
