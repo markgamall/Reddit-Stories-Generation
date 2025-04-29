@@ -1,7 +1,7 @@
 import os
 import time
 import tempfile
-from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 from youtube_transcript_api.formatters import TextFormatter
 from pytube.exceptions import PytubeError
 from pathlib import Path
@@ -55,24 +55,35 @@ def get_video_info(video_url):
         logger.error(f"Error fetching video info: {e}")
         return None
 
-def get_video_transcription(video_id, output_name=None):
-    try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        logger.info("YouTube transcript fetched successfully.")
+def get_video_transcription(video_id, output_name=None, retries=3, delay=5):
+    for attempt in range(retries):
+        try:
+            transcript = YouTubeTranscriptApi.get_transcript(video_id)
+            logger.info(f"YouTube transcript fetched successfully on attempt {attempt + 1}")
 
-        formatter = TextFormatter()
-        transcript_text = formatter.format_transcript(transcript)
+            formatter = TextFormatter()
+            transcript_text = formatter.format_transcript(transcript)
 
-        if output_name and output_name != "":
-            file_path = f"{output_name}_youtube_transcription.txt"
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(transcript_text)
-            logger.info(f"YouTube transcription saved as: {file_path}")
+            if output_name and output_name != "":
+                file_path = f"{output_name}_youtube_transcription.txt"
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(transcript_text)
+                logger.info(f"YouTube transcription saved as: {file_path}")
+            
+            return transcript_text
         
-        return transcript_text
-    except Exception as e:
-        logger.error(f"Error fetching YouTube transcription: {e}")
-        return None
+        except (NoTranscriptFound, TranscriptsDisabled) as e:
+            logger.warning(f"Attempt {attempt + 1} failed: {e}")
+            if attempt < retries - 1:
+                logger.info(f"Retrying after {delay} seconds...")
+                time.sleep(delay)
+            else:
+                logger.error(f"Failed after {retries} attempts: {e}")
+                return None
+        
+        except Exception as e:
+            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
+            return None
 
 def check_transcription_validity(transcription):
     if not transcription:
