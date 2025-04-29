@@ -213,7 +213,7 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
         audio_path, video_title = download_audio_directly(video_url, audio_dir)
         
         if not audio_path:
-            return {"success": False, "error": "Failed to download audio"}
+            return {"success": False, "error": "Audio download failed: The video may be restricted, protected, or inaccessible. Please verify its availability and permissions."}
         
         transcript_text = generate_whisper_transcription(audio_path)
         transcription_method = "Whisper"
