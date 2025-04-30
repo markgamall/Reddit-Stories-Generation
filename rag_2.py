@@ -14,7 +14,7 @@ import json
 import re
 from collections import defaultdict
 
-# Load environment variables
+# Load environment variabless
 load_dotenv()
 
 # Initialize MongoDB connection
