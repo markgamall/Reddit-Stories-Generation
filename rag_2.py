@@ -25,7 +25,7 @@ generated_stories_collection = db['generated_stories']
 
 embeddings = OpenAIEmbeddings(
     api_key=os.environ['OPENAI_API_KEY'],
-    model="text-embedding-ada-002"  # You can also use "text-embedding-3-small" or "text-embedding-3-large" for newer models
+    model="text-embedding-3-large"  # You can also use "text-embedding-3-small" or "text-embedding-3-large" for newer models
 )
 
 # Initialize LLM and chains
