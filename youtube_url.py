@@ -179,6 +179,23 @@ def generate_whisper_transcription(audio_path):
         logger.error(f"Error generating Whisper transcription: {e}")
         return None
 
+
+
+def retry_with_backoff(func, max_attempts=3, initial_delay=1, *args, **kwargs):
+    """Retries a function with exponential backoff."""
+    delay = initial_delay
+    for attempt in range(max_attempts):
+        try:
+            result = func(*args, **kwargs)
+            if result:  # assuming None or False means failure
+                return result
+        except Exception as e:
+            logger.warning(f"Attempt {attempt+1} failed with error: {e}")
+        time.sleep(delay)
+        delay *= 2  # exponential backoff
+    return None
+
+    
 def process_youtube_url(video_url, output_dir=None, fs=None):
     """Process a YouTube URL to get transcription using either YouTube API or Whisper.
     This version skips video download and extracts audio directly."""
@@ -191,34 +208,37 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
     video_id = get_video_id_from_url(video_url)
     if not video_id:
         return {"success": False, "error": "Could not extract video ID from URL"}
-    
-    # Try to get info first
-    video_info = get_video_info(video_url)
+
+    # Try multiple times to get video info
+    video_info = retry_with_backoff(get_video_info, max_attempts=3, initial_delay=2, video_url=video_url)
     if not video_info:
-        return {"success": False, "error": "YouTube content access restricted. This video may be unavailable in your region or protected by content policies. Consider using a VPN or checking if the video is publicly accessible."}
+        return {
+            "success": False,
+            "error": "YouTube content access restricted or temporarily unavailable. "
+                     "This video may be region-blocked or protected. Retry later or use a VPN."
+        }
     
-    # Try to get YouTube transcription first
+    # Try YouTube API transcription
     transcript_text = get_video_transcription(video_id)
     transcription_method = "YouTube API"
     
-    # If YouTube transcription fails or is invalid, use Whisper
     if not transcript_text or check_transcription_validity(transcript_text) == "not valid":
         logger.info("YouTube transcription not available or invalid. Using Whisper...")
         
-        # Create specific directory for audio
         audio_dir = os.path.join(output_dir, "audio")
         os.makedirs(audio_dir, exist_ok=True)
         
-        # Download audio directly instead of downloading video then extracting audio
         audio_path, video_title = download_audio_directly(video_url, audio_dir)
         
         if not audio_path:
-            return {"success": False, "error": "Audio download failed: The video may be restricted, protected, or inaccessible. Please verify its availability and permissions."}
+            return {
+                "success": False,
+                "error": "Audio download failed. Video may be restricted or inaccessible."
+            }
         
         transcript_text = generate_whisper_transcription(audio_path)
         transcription_method = "Whisper"
         
-        # If using GridFS, store the audio file
         if fs:
             try:
                 with open(audio_path, 'rb') as audio_file:
@@ -227,32 +247,24 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
             except Exception as e:
                 logger.error(f"Error storing audio in GridFS: {e}")
         
-        # Clean up temporary files
-        try:
-            with contextlib.suppress(Exception):
-                if os.path.exists(audio_path):
-                    os.remove(audio_path)
-                    
-            # Try to clean up the directories
-            with contextlib.suppress(Exception):
-                os.rmdir(audio_dir)
-                # Only remove the output_dir if we created it as a temp dir
-                if output_dir.startswith(tempfile.gettempdir()):
-                    os.rmdir(output_dir)
-        except Exception as e:
-            logger.warning(f"Warning during cleanup: {e}")
-    
+        # Clean up
+        with contextlib.suppress(Exception):
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+            os.rmdir(audio_dir)
+            if output_dir.startswith(tempfile.gettempdir()):
+                os.rmdir(output_dir)
+
     if not transcript_text:
         return {"success": False, "error": "Failed to generate transcription"}
-    
+
     return {
-        "success": True, 
+        "success": True,
         "transcription": transcript_text,
         "method": transcription_method,
         "video_info": video_info,
         "video_id": video_id
     }
-
 
 # Only run this if executed directly (not when imported)
 if __name__ == "__main__":
