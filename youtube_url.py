@@ -87,6 +87,7 @@ def get_video_transcription(video_id, output_name=None, retries=3, delay=5):
             logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
             return None
 
+
 def check_transcription_validity(transcription):
     if not transcription:
         return "not valid"
@@ -198,9 +199,48 @@ def retry_with_backoff(func, max_attempts=3, initial_delay=1, *args, **kwargs):
     return None
 
 
+def download_subtitles(video_url, retries=3, delay=5):
+    """
+    Tries to download subtitles for a given YouTube video using yt-dlp.
+    Returns subtitle text if available, or None if not.
+    """
+    for attempt in range(retries):
+        try:
+            ydl_opts = {
+                'writesubtitles': True,  # Enable subtitle download
+                'subtitleslangs': ['en'],  # Subtitle language (English)
+                'quiet': True,  # Suppress unnecessary output
+                'outtmpl': '%(id)s_subtitles.%(ext)s',  # Output filename template
+            }
+
+            with YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(video_url, download=False)  # Get video info without downloading
+                subtitles = info_dict.get('subtitles', {})
+                
+                if 'en' in subtitles:  # Check if subtitles are available in English
+                    subtitle_file = f"{info_dict['id']}_en.vtt"  # VTT file containing subtitles
+                    transcript_text = ""
+                    # Extract subtitle text from .vtt file
+                    with open(subtitle_file, 'r', encoding='utf-8') as f:
+                        transcript_text = f.read()
+                    return transcript_text
+                else:
+                    logger.warning(f"No English subtitles found for video: {video_url}")
+                    return None
+
+        except Exception as e:
+            logger.warning(f"Attempt {attempt + 1} failed to download subtitles: {e}")
+            if attempt < retries - 1:
+                logger.info(f"Retrying after {delay} seconds...")
+                time.sleep(delay)
+            else:
+                logger.error(f"Failed to download subtitles after {retries} attempts: {e}")
+                return None
+
 def process_youtube_url(video_url, output_dir=None, fs=None):
     """Process a YouTube URL to get transcription using either YouTube API or Whisper.
     This version skips video download and extracts audio directly."""
+    
     # Use a temporary directory if none specified
     if output_dir is None or output_dir == ".":
         temp_base_dir = tempfile.gettempdir()
@@ -220,45 +260,54 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
                      "This video may be region-blocked or protected. Retry later or use a VPN."
         }
     
-    # Try YouTube API transcription
+    # Step 1: Try YouTube API transcription
     transcript_text = get_video_transcription(video_id)
     transcription_method = "YouTube API"
     
-    if not transcript_text or check_transcription_validity(transcript_text) == "not valid":
-        logger.info("YouTube transcription not available or invalid. Using Whisper...")
+    if transcript_text:
+        logger.info("YouTube transcription fetched successfully.")
+    else:
+        logger.info("YouTube API transcription not found or invalid. Falling back to yt-dlp subtitles.")
         
-        audio_dir = os.path.join(output_dir, "audio")
-        os.makedirs(audio_dir, exist_ok=True)
+        # Step 2: If YouTube API transcription is not available, try to download subtitles with yt-dlp
+        transcript_text = download_subtitles(video_url)
+        transcription_method = "yt-dlp subtitles"
         
-        audio_result = retry_with_backoff(download_audio_directly, max_attempts=3, initial_delay=2, video_url=video_url, output_dir=audio_dir)
-        if not audio_result:
-            return {"success": False, "error": "Audio download failed after multiple attempts. The video may be restricted or unavailable."}
-        audio_path, video_title = audio_result 
-               
-        if not audio_path:
-            return {
-                "success": False,
-                "error": "Audio download failed. Video may be restricted or inaccessible."
-            }
-        
-        transcript_text = retry_with_backoff(generate_whisper_transcription, max_attempts=3, initial_delay=2, audio_path=audio_path)
-        transcription_method = "Whisper"
-        
-        if fs:
-            try:
-                with open(audio_path, 'rb') as audio_file:
-                    audio_file_id = fs.put(audio_file, filename=f"{video_title}_audio.wav")
-                    logger.info(f"Audio file stored in GridFS with ID: {audio_file_id}")
-            except Exception as e:
-                logger.error(f"Error storing audio in GridFS: {e}")
-        
-        # Clean up
-        with contextlib.suppress(Exception):
-            if os.path.exists(audio_path):
-                os.remove(audio_path)
-            os.rmdir(audio_dir)
-            if output_dir.startswith(tempfile.gettempdir()):
-                os.rmdir(output_dir)
+        if transcript_text:
+            logger.info("Subtitles downloaded successfully using yt-dlp.")
+        else:
+            logger.info("No subtitles found. Falling back to Whisper transcription.")
+
+            # Step 3: If no transcription or subtitles are available, use Whisper to transcribe audio
+            audio_dir = os.path.join(output_dir, "audio")
+            os.makedirs(audio_dir, exist_ok=True)
+            
+            audio_result = retry_with_backoff(download_audio_directly, max_attempts=3, initial_delay=2, video_url=video_url, output_dir=audio_dir)
+            if not audio_result:
+                return {"success": False, "error": "Audio download failed after multiple attempts. The video may be restricted or unavailable."}
+            audio_path, video_title = audio_result 
+            
+            if not audio_path:
+                return {"success": False, "error": "Audio download failed. Video may be restricted or inaccessible."}
+            
+            transcript_text = retry_with_backoff(generate_whisper_transcription, max_attempts=3, initial_delay=2, audio_path=audio_path)
+            transcription_method = "Whisper"
+            
+            if fs:
+                try:
+                    with open(audio_path, 'rb') as audio_file:
+                        audio_file_id = fs.put(audio_file, filename=f"{video_title}_audio.wav")
+                        logger.info(f"Audio file stored in GridFS with ID: {audio_file_id}")
+                except Exception as e:
+                    logger.error(f"Error storing audio in GridFS: {e}")
+            
+            # Clean up
+            with contextlib.suppress(Exception):
+                if os.path.exists(audio_path):
+                    os.remove(audio_path)
+                os.rmdir(audio_dir)
+                if output_dir.startswith(tempfile.gettempdir()):
+                    os.rmdir(output_dir)
 
     if not transcript_text:
         return {"success": False, "error": "Failed to generate transcription"}
