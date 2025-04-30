@@ -163,7 +163,7 @@ def download_audio_directly(video_url, output_dir="."):
 
     return None, None
 
-def generate_whisper_transcription(audio_path):
+def generate_whisper_transcription(audio_path=None):
     try:
         audio = whisper.load_audio(audio_path)
         logger.info("Audio loaded successfully for Whisper.")
@@ -240,7 +240,7 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
                 "error": "Audio download failed. Video may be restricted or inaccessible."
             }
         
-        transcript_text = generate_whisper_transcription(audio_path)
+        transcript_text = retry_with_backoff(generate_whisper_transcription, max_attempts=3, initial_delay=2, audio_path=audio_path)
         transcription_method = "Whisper"
         
         if fs:
