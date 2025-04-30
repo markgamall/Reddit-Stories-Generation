@@ -118,6 +118,7 @@ def download_audio_yt_dlp(video_url, output_dir):
     'quiet': True,
     'no_warnings': True,
     'geo_bypass': True,  # Try to bypass geo-restrictions
+    'nocheckcertificate': True      # Skip SSL cert check (fixes some network issues)
     }
 
     with YoutubeDL(opts) as ydl:
@@ -195,7 +196,7 @@ def retry_with_backoff(func, max_attempts=3, initial_delay=1, *args, **kwargs):
         delay *= 2  # exponential backoff
     return None
 
-    
+
 def process_youtube_url(video_url, output_dir=None, fs=None):
     """Process a YouTube URL to get transcription using either YouTube API or Whisper.
     This version skips video download and extracts audio directly."""
@@ -228,8 +229,11 @@ def process_youtube_url(video_url, output_dir=None, fs=None):
         audio_dir = os.path.join(output_dir, "audio")
         os.makedirs(audio_dir, exist_ok=True)
         
-        audio_path, video_title = download_audio_directly(video_url, audio_dir)
-        
+        audio_result = retry_with_backoff(download_audio_directly, max_attempts=3, initial_delay=2, video_url=video_url, output_dir=audio_dir)
+        if not audio_result:
+            return {"success": False, "error": "Audio download failed after multiple attempts. The video may be restricted or unavailable."}
+        audio_path, video_title = audio_result 
+               
         if not audio_path:
             return {
                 "success": False,
