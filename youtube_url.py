@@ -118,7 +118,8 @@ def download_audio_yt_dlp(video_url, output_dir):
     'quiet': True,
     'no_warnings': True,
     'geo_bypass': True,  # Try to bypass geo-restrictions
-    'nocheckcertificate': True      # Skip SSL cert check (fixes some network issues)
+    'nocheckcertificate': True,      # Skip SSL cert check (fixes some network issues)
+    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     }
 
     with YoutubeDL(opts) as ydl:
